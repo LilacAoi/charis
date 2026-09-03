@@ -1,7 +1,13 @@
 use crate::error::{CharisError, Result};
-use crate::models::{BoardCategory, BoardItem, ThreadContent, ThreadItem};
-use crate::parser::{decode_cp932, parse_bbsmenu_html, parse_bbsmenu_json, parse_dat, parse_subject_txt};
+use crate::models::{
+    BoardCategory, BoardItem, PostPayload, PostResult, ThreadContent, ThreadItem,
+};
+use crate::parser::{
+    decode_cp932, encode_cp932_url, parse_bbsmenu_html, parse_bbsmenu_json, parse_dat,
+    parse_post_response, parse_subject_txt,
+};
 use reqwest::header::USER_AGENT;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
@@ -15,6 +21,7 @@ pub struct FiveChannelClient {
     user_agent: String,
     last_request_time: Arc<Mutex<Option<Instant>>>,
     rate_limit_delay: Duration,
+    cookies: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl Default for FiveChannelClient {
@@ -35,6 +42,7 @@ impl FiveChannelClient {
             user_agent: DEFAULT_USER_AGENT.to_string(),
             last_request_time: Arc::new(Mutex::new(None)),
             rate_limit_delay: DEFAULT_RATE_LIMIT_DELAY,
+            cookies: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -207,6 +215,108 @@ impl FiveChannelClient {
         Err(CharisError::Parse(format!(
             "Failed to fetch dat for {server}/{board}/{key}"
         )))
+    }
+
+    /// レス書き込み POST リクエスト
+    pub async fn post_comment(&self, payload: &PostPayload) -> Result<PostResult> {
+        self.ensure_rate_limit().await;
+
+        let url = format!("https://{}.5ch.io/test/bbs.cgi", payload.server);
+        let referer = format!(
+            "https://{}.5ch.io/test/read.cgi/{}/{}/",
+            payload.server, payload.board, payload.key
+        );
+        let origin = format!("https://{}.5ch.io", payload.server);
+
+        // 送信パラメータの構築 (Shift_JIS URLエンコード)
+        let now = chrono::Utc::now().timestamp();
+        let time_str = payload
+            .extra_params
+            .get("time")
+            .cloned()
+            .unwrap_or_else(|| now.to_string());
+
+        let submit_val = payload
+            .extra_params
+            .get("submit")
+            .cloned()
+            .unwrap_or_else(|| "書き込む".to_string());
+
+        let mut body_params = vec![
+            format!("bbs={}", payload.board),
+            format!("key={}", payload.key),
+            format!("time={}", time_str),
+            format!("FROM={}", encode_cp932_url(&payload.name)),
+            format!("mail={}", encode_cp932_url(&payload.mail)),
+            format!(
+                "MESSAGE={}",
+                encode_cp932_url(&payload.body.replace('\n', "\r\n"))
+            ),
+            format!("submit={}", encode_cp932_url(&submit_val)),
+        ];
+
+        // extra_params にある追加パラメータ (bbs, key, time, FROM, mail, MESSAGE, submit 以外) を追記
+        for (k, v) in &payload.extra_params {
+            if !["bbs", "key", "time", "FROM", "mail", "MESSAGE", "submit"].contains(&k.as_str()) {
+                body_params.push(format!("{}={}", k, encode_cp932_url(v)));
+            }
+        }
+
+        let body_str = body_params.join("&");
+
+        // 保持している Cookie を取得
+        let cookie_header = {
+            let cookies = self.cookies.lock().await;
+            cookies
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect::<Vec<_>>()
+                .join("; ")
+        };
+
+        let mut req = self
+            .http_client
+            .post(&url)
+            .header(USER_AGENT, &self.user_agent)
+            .header(
+                reqwest::header::CONTENT_TYPE,
+                "application/x-www-form-urlencoded",
+            )
+            .header(reqwest::header::REFERER, &referer)
+            .header("Origin", &origin)
+            .header(
+                reqwest::header::ACCEPT,
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            )
+            .header(reqwest::header::ACCEPT_LANGUAGE, "ja,en-US;q=0.9,en;q=0.8")
+            .body(body_str);
+
+        if !cookie_header.is_empty() {
+            req = req.header(reqwest::header::COOKIE, cookie_header);
+        }
+
+        let response = req.send().await?;
+
+        // Set-Cookie ヘッダーの処理
+        {
+            let mut cookies_lock = self.cookies.lock().await;
+            for val in response.headers().get_all(reqwest::header::SET_COOKIE) {
+                if let Ok(s) = val.to_str() {
+                    if let Some(cookie_pair) = s.split(';').next() {
+                        let mut parts = cookie_pair.splitn(2, '=');
+                        if let (Some(k), Some(v)) = (parts.next(), parts.next()) {
+                            cookies_lock.insert(k.trim().to_string(), v.trim().to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        let bytes = response.bytes().await?;
+        let text = String::from_utf8(bytes.to_vec()).unwrap_or_else(|_| decode_cp932(&bytes));
+
+        let result = parse_post_response(&text);
+        Ok(result)
     }
 }
 

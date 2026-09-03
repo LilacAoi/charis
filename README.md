@@ -1,6 +1,6 @@
 # charis (5ch Dedicated Browser)
 
-Arch Linux 向けに Rust と Tauri 2.0 で開発された、高速・軽量な 5ちゃんねる（5ch）専用ブラウザです。  
+Rust と Tauri 2.0 で開発された、高速・軽量な 64-bit Linux 向けの 5ちゃんねる（5ch）専用ブラウザです。  
 Vim / Helix ライクな完全キーボードナビゲーションと、洗練されたダークテーマ 3 ペイン UI を備えています。
 
 ![charis icon](crates/charis-desktop/icons/128x128.png)
@@ -10,11 +10,20 @@ Vim / Helix ライクな完全キーボードナビゲーションと、洗練�
 ## 主な特徴
 
 - ⚡ **高速・省リソース**: Rust によるネイティブバイナリ動作で、瞬時に起動しメモリ消費も極小。
-- ⌨️ **Vim / Helix ライクなキーバインド**: マウスに手を伸ばすことなく、`j`/`k`/`h`/`l` や `Tab`、`Shift+j`/`Shift+k` だけで板巡回から本文閲覧まで完結。
+- ⌨️ **Vim / Helix ライクなキーバインド**: マウスに手を伸ばすことなく、`j`/`k`/`h`/`l` や `Tab`、`Shift+j`/`Shift+k`、`w` だけで板巡回からレス書き込みまで完結。
 - 🖥️ **洗練された 3 ペイン UI**:
   - **板一覧（左ペイン）**: お気に入り板、ブックマーク、閲覧履歴（50件自動制限）、カテゴリ別全板ツリー。
   - **スレッド一覧（右上ペイン）**: 勢い順・レス数順・新着順・番号順ソート、`/` キーによるインクリメンタル検索。
   - **スレッド本文（右下ペイン）**: アンカーホバーポップアップ、被アンカー返信ツリー、同一ID発言抽出、画像モザイク、連鎖あぼーん、自動差分更新。
+- ✍️ **レス書き込み＆確認画面対応**:
+  - 各板の `test/bbs.cgi` への Shift_JIS (CP932) POST 送信。
+  - 5ch の投稿確認・クッキー確認（「上記全てを承諾して書き込む」）を自動解析し、ワンクリックで承諾送信できるスマートなUI。
+  - 各レスからの「💬 返信」ボタン（アンカー自動補完）や `Ctrl+Enter` 送信ショートカット。
+- ⚙️ **充実した環境設定 & フォントカスタマイズ**:
+  - UI全体のフォント・サイズ（板一覧・スレ一覧ともリアルタイム連動）。
+  - レス本文のフォント、サイズ、行間。
+  - スレッド開示時の初期位置（先頭 / 前回読んだ位置 / 最新レス）としおり（既読位置）の自動復元。
+  - デフォルトの名前・メール（`sage` 等）設定。
 - 🛡️ **画像モザイク（ぼかし）＆外部ブラウザ連携**:
   - 不快画像対策として初期状態で画像にモザイクを適用（クリックで即座に解除可能）。
   - 「🔗 元画像」や外部リンクは OS デフォルトのブラウザ（Firefox, Chrome 等）で直接開きます。
@@ -26,12 +35,25 @@ Vim / Helix ライクな完全キーボードナビゲーションと、洗練�
 
 ---
 
-## 動作環境・必要パッケージ (Arch Linux)
+## 動作環境・必要パッケージ (Linux 64-bit)
 
-Tauri 2.0（WebKitGTK）の実行・ビルドには以下のパッケージが必要です：
+64-bit Linux（x86_64 / aarch64）環境全般（Arch Linux, Ubuntu, Debian, Fedora 等）で動作します。  
+Tauri 2.0（WebKitGTK）のビルド・実行には以下のパッケージが必要です：
 
+### Arch Linux
 ```bash
 sudo pacman -S --needed base-devel webkit2gtk-4.1
+```
+
+### Ubuntu / Debian
+```bash
+sudo apt update
+sudo apt install -y build-essential libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+```
+
+### Fedora
+```bash
+sudo dnf install -y @development-tools webkit2gtk4.1-devel
 ```
 
 > **Note**: フロントエンドは Vanilla JS / CSS で直接バンドルされているため、Node.js や npm のインストールは不要です。Rust (`cargo`) だけでビルドできます。
@@ -63,6 +85,8 @@ cargo build --release -p charis-desktop
 | `Shift + Tab` | 全体 | 前のペインへフォーカス移動（スレッド本文 ➔ スレ一覧 ➔ 板一覧） |
 | `/` | 全体 | スレッド検索ボックスにフォーカス |
 | `r` | 全体 | 現在の板またはスレッドを更新 |
+| `w` | **スレッド本文** | **レス書き込みモーダルを開く** |
+| `Ctrl + Enter` | **書き込みモーダル** | **レスを送信する** |
 | `Escape` | 全体 | モーダルを閉じる / 検索フォーカス解除 |
 | `j` / `↓` | **板一覧** | 選択カーソルを下に移動（スレ一覧は読み込まない） |
 | `k` / `↑` | **板一覧** | 選択カーソルを上に移動 |
@@ -75,7 +99,7 @@ cargo build --release -p charis-desktop
 | `Enter` / `l` / `→` | **スレ一覧** | スレッド本文を読み込み、**スレッド本文へフォーカス移動** |
 | `Shift + j` (`J`) | **スレッド本文** | **半画面下スクロール** |
 | `Shift + k` (`K`) | **スレッド本文** | **半画面上スクロール** |
-| `j` / `↓`, `k` / `↑` | **スレッド本文** | なめらかに下/上スクロール（120px） |
+| `j` / `↓`, `k` / `↑` | **スレッド本文** | なめらかに下/上スクロール（設定値 px） |
 | `d` / `u` | **スレッド本文** | 半画面スクロール（Vim互換） |
 | `G` / `gg` | **スレッド本文** | 最下部ジャンプ / 最上部ジャンプ |
 | `h` / `←` | **スレッド本文** | フォーカスを**スレ一覧に戻す** |
@@ -87,6 +111,8 @@ cargo build --release -p charis-desktop
 XDG Base Directory 規格に準拠し、ユーザーホーム配下に JSON 形式で保存されます。
 
 - 設定ディレクトリ: `~/.config/charis/`
+  - `settings.json`: UIフォント、本文フォント、フォントサイズ、行間、初期位置、画像モザイク、スクロール量などの環境設定
+  - `read_positions.json`: スレッドごとの既読レス番号（しおり・読了位置）
   - `favorites.json`: お気に入り板一覧
   - `bookmarks.json`: ブックマークスレッド一覧
   - `history.json`: 閲覧履歴（最新 50 件を自動保持）
@@ -96,10 +122,11 @@ XDG Base Directory 規格に準拠し、ユーザーホーム配下に JSON 形�
 
 ## プロジェクト構成
 
-- [`crates/charis-core`](crates/charis-core): 5ch 通信・パース・NG判定・ストレージの共通ライブラリ
+- [`crates/charis-core`](crates/charis-core): 5ch 通信・パース・NG判定・ストレージ・POST書き込みの共通ライブラリ
 - [`crates/charis-desktop`](crates/charis-desktop): Tauri 2.0 バックエンド & IPC コマンド
 - [`ui/`](ui): 3 ペイン Webview フロントエンド（HTML / CSS / JS）
 - [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md): 詳細仕様書
+- [`docs/TODO.md`](docs/TODO.md): 開発ロードマップ & タスクバックログ
 
 ---
 

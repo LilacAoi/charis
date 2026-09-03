@@ -6,7 +6,7 @@
   <title>charis - 5ch Dedicated Browser</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+1:wght@300;400;500;700&family=M+PLUS+1p:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+1:wght@300;400;500;700&family=M+PLUS+1p:wght@300;400;500;700&family=Noto+Sans+JP:wght@300;400;500;700&family=Noto+Serif+JP:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -15,7 +15,10 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <span class="app-title">charis</span>
-        <button class="icon-btn" id="btnRefreshBbs" title="板一覧を再取得 (r)">🔄</button>
+        <div style="display: flex; gap: 4px;">
+          <button class="icon-btn" id="btnRefreshBbs" title="板一覧を再取得 (r)">🔄</button>
+          <button class="icon-btn" id="btnOpenSettingsModal" title="設定 (Settings)">⚙️</button>
+        </div>
       </div>
 
       <div class="sidebar-content" id="sidebarContent">
@@ -131,6 +134,9 @@
             </div>
           </div>
           <div class="toolbar-actions">
+            <button class="tool-btn highlight-btn" id="btnOpenPostModal" title="スレッドに書き込み (w)">
+              <span>✍️</span> <span>書き込み</span>
+            </button>
             <button class="tool-btn" id="btnRefreshContent" title="新着レスを確認 (r)">
               <span>🔄</span> <span>更新</span>
             </button>
@@ -145,7 +151,10 @@
               <span id="bmStarIcon">☆</span> <span id="bmLabel">保存</span>
             </button>
             <button class="tool-btn" id="btnOpenNGModal" title="NG設定（ID・ワード）">
-              <span>⚙️</span> <span>NG設定</span>
+              <span>🚫</span> <span>NG設定</span>
+            </button>
+            <button class="tool-btn" id="btnOpenSettingsModalToolbar" title="設定（フォント・操作）">
+              <span>⚙️</span> <span>設定</span>
             </button>
           </div>
         </div>
@@ -217,6 +226,217 @@
           </div>
           <div class="chip-container" id="ngWordChips"></div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settingsModalOverlay" class="modal-overlay">
+    <div class="modal-window settings-modal-window">
+      <div class="modal-header">
+        <div class="modal-title">⚙️ 環境設定</div>
+        <button class="modal-close-btn" id="btnCloseSettingsModal">&times;</button>
+      </div>
+      <div class="modal-body settings-modal-body">
+        <!-- Settings Tabs -->
+        <div class="settings-tabs">
+          <button class="settings-tab-btn active" data-tab="tab-fonts">フォント・表示</button>
+          <button class="settings-tab-btn" data-tab="tab-general">操作・一般</button>
+        </div>
+
+        <!-- Tab 1: Fonts & Display -->
+        <div class="settings-tab-content active" id="tab-fonts">
+          <!-- UI Font Family -->
+          <div class="settings-section">
+            <h4 class="settings-section-title">UI全体のフォント</h4>
+            <div class="form-group">
+              <label for="selectUiFont">フォントプリセット</label>
+              <select id="selectUiFont" class="settings-select">
+                <option value="'M PLUS 1', 'M PLUS 1p', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">M PLUS 1 (標準・モダン)</option>
+                <option value="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">システム標準 (Segoe UI / Roboto / San Francisco)</option>
+                <option value="'Noto Sans JP', sans-serif">Noto Sans JP</option>
+                <option value="'BIZ UDPGothic', sans-serif">BIZ UDPゴシック</option>
+                <option value="'Meiryo', 'メイリオ', sans-serif">メイリオ</option>
+                <option value="monospace">等幅 (Monospace)</option>
+                <option value="custom">カスタム指定（手動入力）...</option>
+              </select>
+            </div>
+            <div class="form-group" id="groupCustomUiFont" style="display: none;">
+              <label for="inputCustomUiFont">カスタムフォント名 (CSS font-family)</label>
+              <input type="text" id="inputCustomUiFont" class="form-input" placeholder="例: 'Source Han Sans', sans-serif" />
+            </div>
+            <div class="form-group">
+              <div class="slider-header">
+                <label for="rangeUiFontSize">UI全体のフォントサイズ</label>
+                <span class="range-val" id="valUiFontSize">13px</span>
+              </div>
+              <input type="range" id="rangeUiFontSize" min="11" max="18" step="1" value="13" class="settings-slider" />
+            </div>
+          </div>
+
+          <!-- Post Font Family & Size -->
+          <div class="settings-section">
+            <h4 class="settings-section-title">スレッド本文（レス）のフォント</h4>
+            <div class="form-group">
+              <label for="selectPostFont">フォントプリセット</label>
+              <select id="selectPostFont" class="settings-select">
+                <option value="">UIフォントと同じ（連動）</option>
+                <option value="'M PLUS 1', 'M PLUS 1p', sans-serif">M PLUS 1</option>
+                <option value="'Noto Sans JP', sans-serif">Noto Sans JP</option>
+                <option value="'IPAMonaPGothic', 'Mona', 'MS PGothic', 'ＭＳ Ｐゴシック', sans-serif">アスキーアート (AA) 向け（モナー / MS Pゴシック等）</option>
+                <option value="'Noto Serif JP', 'Yu Mincho', '游明朝', serif">明朝体 (Noto Serif JP / 游明朝)</option>
+                <option value="monospace">等幅 (Monospace)</option>
+                <option value="custom">カスタム指定（手動入力）...</option>
+              </select>
+            </div>
+            <div class="form-group" id="groupCustomPostFont" style="display: none;">
+              <label for="inputCustomPostFont">カスタムフォント名 (CSS font-family)</label>
+              <input type="text" id="inputCustomPostFont" class="form-input" placeholder="例: 'MS PGothic', 'IPAMonaPGothic', sans-serif" />
+            </div>
+            <div class="form-group">
+              <div class="slider-header">
+                <label for="rangePostFontSize">本文フォントサイズ</label>
+                <span class="range-val" id="valPostFontSize">14px</span>
+              </div>
+              <input type="range" id="rangePostFontSize" min="12" max="24" step="1" value="14" class="settings-slider" />
+            </div>
+            <div class="form-group">
+              <div class="slider-header">
+                <label for="rangePostLineHeight">行の高さ (行間)</label>
+                <span class="range-val" id="valPostLineHeight">1.65</span>
+              </div>
+              <input type="range" id="rangePostLineHeight" min="1.2" max="2.4" step="0.05" value="1.65" class="settings-slider" />
+            </div>
+          </div>
+
+          <!-- Live Preview -->
+          <div class="settings-section">
+            <h4 class="settings-section-title">プレビュー</h4>
+            <div class="preview-box" id="settingsPreviewBox">
+              <div class="preview-ui-sample">スレッド一覧プレビュー: [1] 【5chブラウザ】charis総合スレ (勢い: 1250)</div>
+              <div class="preview-post-sample">
+                <div class="preview-post-header">
+                  <span class="preview-num">1</span>
+                  <span class="preview-name">名無しさん＠お腹いっぱい。</span>
+                  <span class="preview-date">2026/09/03(木) 19:15:00.00</span>
+                  <span class="preview-id">ID:charis/app</span>
+                </div>
+                <div class="preview-post-body" id="previewPostBody">
+                  フォントと文字サイズのプレビュー表示です。<br>
+                  読みやすいフォントとサイズを選んで快適に閲覧できます。<br>
+                  アスキーアート (AA) のずれが気になる場合はAA向けフォントをお試しください。
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: General & Operation -->
+        <div class="settings-tab-content" id="tab-general">
+          <div class="settings-section">
+            <h4 class="settings-section-title">画像プレビュー</h4>
+            <div class="form-group checkbox-group">
+              <label class="custom-checkbox-label">
+                <input type="checkbox" id="checkDefaultBlurImages" checked />
+                <span>画像の初期モザイク（ぼかし）を有効にする</span>
+              </label>
+              <div class="setting-desc">スレッド内の画像サムネイルを初期状態でぼかします。クリックで即座に解除できます。</div>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h4 class="settings-section-title">スレッド開示時の初期位置</h4>
+            <div class="form-group">
+              <label for="selectInitialScroll">開いたときの初期スクロール位置</label>
+              <select id="selectInitialScroll" class="settings-select">
+                <option value="top">先頭（1レス目）から表示</option>
+                <option value="lastRead">前回読んだ位置（しおり機能）</option>
+                <option value="bottom">最新レス（最下部）から表示</option>
+              </select>
+              <div class="setting-desc">スレッド一覧からスレッドを選択して開いたときの初期表示位置です。「前回読んだ位置」を選択すると、前回スクロールした位置（レス）から自動で再開します。</div>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h4 class="settings-section-title">キーボードスクロール</h4>
+            <div class="form-group">
+              <div class="slider-header">
+                <label for="rangeScrollAmount">j / k キーでのスクロール移動量</label>
+                <span class="range-val" id="valScrollAmount">120px</span>
+              </div>
+              <input type="range" id="rangeScrollAmount" min="40" max="300" step="10" value="120" class="settings-slider" />
+              <div class="setting-desc">スレッド本文で j / k キーを押したときのスクロール量です。</div>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h4 class="settings-section-title">書き込み初期値設定</h4>
+            <div class="form-group">
+              <label for="inputDefaultName">デフォルトの名前（空欄で板の名無し）</label>
+              <input type="text" id="inputDefaultName" class="form-input" placeholder="空欄時は板のデフォルト名無し" />
+            </div>
+            <div class="form-group">
+              <label for="inputDefaultMail">デフォルトのメール欄（例: sage）</label>
+              <input type="text" id="inputDefaultMail" class="form-input" placeholder="例: sage" />
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="tool-btn" id="btnResetSettings">初期値に戻す</button>
+        <div style="flex: 1;"></div>
+        <button class="tool-btn active" id="btnSaveSettings">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Post Modal (レス書き込み) -->
+  <div id="postModalOverlay" class="modal-overlay">
+    <div class="modal-window post-modal-window">
+      <div class="modal-header">
+        <div class="modal-title" id="postModalTitle">✍️ レス書き込み</div>
+        <button class="modal-close-btn" id="btnClosePostModal">&times;</button>
+      </div>
+      <div class="modal-body post-modal-body">
+        <!-- 確認画面（NeedConfirm）表示用バナー/カード（初期非表示） -->
+        <div id="postConfirmNotice" class="post-confirm-notice" style="display: none;">
+          <div class="confirm-header">
+            <span>⚠️ 5ch サーバーから投稿確認が求められました</span>
+          </div>
+          <div class="confirm-message" id="postConfirmMessage"></div>
+          <div class="confirm-desc">この内容で投稿を続行する場合は下の「承諾して書き込む」を押してください。</div>
+        </div>
+
+        <!-- エラーメッセージ表示領域 -->
+        <div id="postErrorNotice" class="post-error-notice" style="display: none;"></div>
+
+        <!-- 入力フォーム -->
+        <div class="post-form-row">
+          <div class="form-group" style="flex: 2;">
+            <label for="inputPostName">名前</label>
+            <input type="text" id="inputPostName" class="form-input" placeholder="名無しさん（空欄でデフォルト）" />
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label for="inputPostMail">メール</label>
+            <div style="display: flex; gap: 4px;">
+              <input type="text" id="inputPostMail" class="form-input" placeholder="sage" />
+              <button class="tool-btn" id="btnToggleSage" type="button" title="sage を素早くオン/オフ">sage</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group" style="flex: 1; display: flex; flex-direction: column;">
+          <label for="textareaPostBody">本文 <span class="hint-text">(Ctrl + Enter で送信)</span></label>
+          <textarea id="textareaPostBody" class="form-textarea" placeholder="書き込み本文を入力してください..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <span class="post-status-text" id="postStatusText"></span>
+        <div style="flex: 1;"></div>
+        <button class="tool-btn" id="btnCancelPost">キャンセル</button>
+        <button class="tool-btn active highlight-btn" id="btnSubmitPost">
+          <span id="btnSubmitPostText">書き込む (Ctrl+Enter)</span>
+        </button>
       </div>
     </div>
   </div>

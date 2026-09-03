@@ -1,9 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use charis_core::{
-    BoardCategory, BoardItem, BookmarkThreadItem, FiveChannelClient, HistoryThreadItem,
-    NGSettings, StorageManager, ThreadContent, ThreadItem,
+    AppSettings, BoardCategory, BoardItem, BookmarkThreadItem, FiveChannelClient,
+    HistoryThreadItem, NGSettings, PostPayload, PostResult, StorageManager, ThreadContent,
+    ThreadItem,
 };
+use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::State;
 
@@ -161,6 +163,36 @@ fn save_ng_settings(state: State<'_, Arc<AppState>>, settings: NGSettings) -> Re
 }
 
 #[tauri::command]
+fn get_app_settings(state: State<'_, Arc<AppState>>) -> AppSettings {
+    state.storage.get_app_settings()
+}
+
+#[tauri::command]
+fn save_app_settings(state: State<'_, Arc<AppState>>, settings: AppSettings) -> Result<(), String> {
+    state
+        .storage
+        .save_app_settings(&settings)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_read_positions(state: State<'_, Arc<AppState>>) -> HashMap<String, u32> {
+    state.storage.get_read_positions()
+}
+
+#[tauri::command]
+fn save_read_position(
+    state: State<'_, Arc<AppState>>,
+    key: String,
+    res_number: u32,
+) -> Result<(), String> {
+    state
+        .storage
+        .save_read_position(&key, res_number)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn open_external_url(url: String) -> Result<(), String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("Invalid URL protocol".to_string());
@@ -194,6 +226,28 @@ fn open_external_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn post_comment(
+    state: State<'_, Arc<AppState>>,
+    payload: PostPayload,
+) -> Result<PostResult, String> {
+    println!(
+        "[charis-backend] post_comment called for {}/{} (key: {})",
+        payload.server, payload.board, payload.key
+    );
+    let res = state.client.post_comment(&payload).await.map_err(|e| {
+        eprintln!("[charis-backend] post_comment error: {e}");
+        e.to_string()
+    });
+    if let Ok(ref result) = res {
+        println!(
+            "[charis-backend] post_comment result: {:?} - {}",
+            result.status, result.message
+        );
+    }
+    res
+}
+
 fn main() {
     let client = FiveChannelClient::new();
     let storage = StorageManager::new_default();
@@ -216,9 +270,15 @@ fn main() {
             clear_history,
             get_ng_settings,
             save_ng_settings,
+            get_app_settings,
+            save_app_settings,
+            get_read_positions,
+            save_read_position,
+            post_comment,
             open_external_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
 

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -94,3 +95,126 @@ impl Default for NGSettings {
         }
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSettings {
+    #[serde(default = "default_ui_font_family")]
+    pub ui_font_family: String,
+    #[serde(default = "default_ui_font_size")]
+    pub ui_font_size: u32,
+    #[serde(default = "default_post_font_family")]
+    pub post_font_family: String,
+    #[serde(default = "default_post_font_size")]
+    pub post_font_size: u32,
+    #[serde(default = "default_post_line_height")]
+    pub post_line_height: f64,
+    #[serde(default = "default_blur_images")]
+    pub default_blur_images: bool,
+    #[serde(default = "default_scroll_amount")]
+    pub scroll_amount: u32,
+    #[serde(default = "default_theme")]
+    pub theme: String,
+    #[serde(default = "default_initial_scroll_position")]
+    pub initial_scroll_position: String,
+    #[serde(default = "default_name")]
+    pub default_name: String,
+    #[serde(default = "default_mail")]
+    pub default_mail: String,
+}
+
+fn default_ui_font_family() -> String {
+    "'M PLUS 1', 'M PLUS 1p', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif".into()
+}
+
+fn default_ui_font_size() -> u32 {
+    13
+}
+
+fn default_post_font_family() -> String {
+    "".into()
+}
+
+fn default_post_font_size() -> u32 {
+    14
+}
+
+fn default_post_line_height() -> f64 {
+    1.65
+}
+
+fn default_blur_images() -> bool {
+    true
+}
+
+fn default_scroll_amount() -> u32 {
+    120
+}
+
+fn default_theme() -> String {
+    "dark".into()
+}
+
+fn default_initial_scroll_position() -> String {
+    "top".into()
+}
+
+fn default_name() -> String {
+    "".into()
+}
+
+fn default_mail() -> String {
+    "sage".into()
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            ui_font_family: default_ui_font_family(),
+            ui_font_size: default_ui_font_size(),
+            post_font_family: default_post_font_family(),
+            post_font_size: default_post_font_size(),
+            post_line_height: default_post_line_height(),
+            default_blur_images: default_blur_images(),
+            scroll_amount: default_scroll_amount(),
+            theme: default_theme(),
+            initial_scroll_position: default_initial_scroll_position(),
+            default_name: default_name(),
+            default_mail: default_mail(),
+        }
+    }
+}
+
+/// レス書き込みペイロード
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PostPayload {
+    pub server: String,
+    pub board: String,
+    pub key: String,
+    pub name: String,
+    pub mail: String,
+    pub body: String,
+    #[serde(default)]
+    pub extra_params: HashMap<String, String>,
+}
+
+/// 書き込みレスポンスステータス
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PostResponseStatus {
+    Success,
+    NeedConfirm,
+    Error,
+}
+
+/// 書き込み処理結果
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PostResult {
+    pub status: PostResponseStatus,
+    pub message: String,
+    #[serde(default)]
+    pub extra_params: HashMap<String, String>,
+}
+

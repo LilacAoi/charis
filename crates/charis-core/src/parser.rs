@@ -1,7 +1,10 @@
 use crate::error::{CharisError, Result};
-use crate::models::{BoardCategory, BoardItem, PostItem, ThreadContent, ThreadItem};
+use crate::models::{
+    BoardCategory, BoardItem, PostItem, PostResponseStatus, PostResult, ThreadContent, ThreadItem,
+};
 use regex::Regex;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 static BOARD_URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
@@ -26,6 +29,18 @@ static BBSMENU_CAT_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 
 static BBSMENU_LINK_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?i)<A\s+HREF=(https?://([^.]+)\.5ch\.(?:io|net)/([^/]+)/?)>(.*?)</A>"#).unwrap()
+});
+
+static TITLE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)<title>(.*?)</title>").unwrap()
+});
+
+static ERROR_BOLD_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)<b>\s*(?:ERROR|ＥＲＲＯＲ)[：:](.*?)</b>").unwrap()
+});
+
+static HIDDEN_INPUT_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?i)<input[^>]*type=["']?hidden["']?[^>]*name=["']?([^"' >]+)["']?[^>]*value=["']?([^"'>]*)["']?[^>]*>"#).unwrap()
 });
 
 /// Shift_JIS (CP932) のバイト列を UTF-8 文字列にデコード
@@ -233,6 +248,129 @@ pub fn parse_dat(text: &str) -> ThreadContent {
     }
 }
 
+/// UTF-8 文字列を Shift_JIS (CP932) で URL エンコードする (application/x-www-form-urlencoded)
+pub fn encode_cp932_url(s: &str) -> String {
+    let (bytes, _, _) = encoding_rs::SHIFT_JIS.encode(s);
+    let mut encoded = String::with_capacity(bytes.len() * 3);
+    let mut i = 0;
+    let b_slice = bytes.as_ref();
+    while i < b_slice.len() {
+        let b = b_slice[i];
+        // Shift_JIS マルチバイト文字の第1バイト判定: 0x81..=0x9F, 0xE0..=0xFC
+        if (0x81..=0x9F).contains(&b) || (0xE0..=0xFC).contains(&b) {
+            use std::fmt::Write;
+            let _ = write!(&mut encoded, "%{:02X}", b);
+            i += 1;
+            if i < b_slice.len() {
+                let b2 = b_slice[i];
+                let _ = write!(&mut encoded, "%{:02X}", b2);
+                i += 1;
+            }
+        } else {
+            match b {
+                b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'*' => {
+                    encoded.push(b as char);
+                }
+                b' ' => encoded.push('+'),
+                _ => {
+                    use std::fmt::Write;
+                    let _ = write!(&mut encoded, "%{:02X}", b);
+                }
+            }
+            i += 1;
+        }
+    }
+    encoded
+}
+
+/// 書き込み後のレスポンスHTMLをパースして結果を判定する
+pub fn parse_post_response(html: &str) -> PostResult {
+    let title = TITLE_REGEX
+        .captures(html)
+        .map(|c| c.get(1).map_or("", |m| m.as_str()).trim())
+        .unwrap_or("");
+
+    // 1. 成功判定: タイトルまたは本文に「書きこみました」があるか、メタタグで自動リフレッシュしているか
+    if title.contains("書きこみました")
+        || html.contains("書きこみました")
+        || html.contains("http-equiv=\"refresh\"")
+        || html.contains("http-equiv='refresh'")
+    {
+        return PostResult {
+            status: PostResponseStatus::Success,
+            message: "書き込みが完了しました。".to_string(),
+            extra_params: HashMap::new(),
+        };
+    }
+
+    // 2. エラー判定: <b>ERROR: ...</b> や ＥＲＲＯＲ が含まれる場合
+    if let Some(caps) = ERROR_BOLD_REGEX.captures(html) {
+        let err_msg = caps.get(1).map_or("", |m| m.as_str()).trim();
+        let clean_msg = HTML_TAG_REGEX.replace_all(err_msg, "").trim().to_string();
+        return PostResult {
+            status: PostResponseStatus::Error,
+            message: if clean_msg.is_empty() {
+                "エラーが発生しました。".to_string()
+            } else {
+                clean_msg
+            },
+            extra_params: HashMap::new(),
+        };
+    }
+
+    // 3. 確認画面（クッキー確認 / 投稿確認 / 承諾して書き込む）判定
+    let is_confirm = title.contains("確認")
+        || title.contains("投稿確認")
+        || html.contains("上記全てを承諾して書き込む")
+        || html.contains("承諾して書き込む")
+        || html.contains("もう一度確認してください")
+        || html.contains("クッキー");
+
+    if is_confirm {
+        // hidden パラメータを抽出
+        let mut extra_params = HashMap::new();
+        for cap in HIDDEN_INPUT_REGEX.captures_iter(html) {
+            if let (Some(name), Some(val)) = (cap.get(1), cap.get(2)) {
+                extra_params.insert(name.as_str().to_string(), val.as_str().to_string());
+            }
+        }
+
+        let message = if html.contains("上記全てを承諾して書き込む") {
+            "サーバーから利用規約等の確認が求められました。「承諾して書き込む」を押すと投稿を完了します。".to_string()
+        } else if !title.is_empty() {
+            format!("投稿確認画面が表示されました ({})", title)
+        } else {
+            "投稿確認画面が表示されました。".to_string()
+        };
+
+        return PostResult {
+            status: PostResponseStatus::NeedConfirm,
+            message,
+            extra_params,
+        };
+    }
+
+    // 4. その他のエラーメッセージ抽出
+    let clean_body = HTML_TAG_REGEX.replace_all(html, " ").trim().to_string();
+    let brief = if clean_body.len() > 140 {
+        format!("{}...", &clean_body[..140])
+    } else {
+        clean_body
+    };
+
+    PostResult {
+        status: PostResponseStatus::Error,
+        message: if !title.is_empty() {
+            format!("{}: {}", title, brief)
+        } else if !brief.is_empty() {
+            brief
+        } else {
+            "書き込み処理に失敗しました。".to_string()
+        },
+        extra_params: HashMap::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,5 +413,42 @@ mod tests {
         let bytes = vec![0x83, 0x65, 0x83, 0x58, 0x83, 0x67];
         let decoded = decode_cp932(&bytes);
         assert_eq!(decoded, "テスト");
+    }
+
+    #[test]
+    fn test_encode_cp932_url() {
+        assert_eq!(encode_cp932_url("abc 123"), "abc+123");
+        // "テスト" -> %83%65%83%58%83%67
+        assert_eq!(encode_cp932_url("テスト"), "%83%65%83%58%83%67");
+    }
+
+    #[test]
+    fn test_parse_post_response_success() {
+        let sample = "<html><head><title>書きこみました</title></head><body>書きこみました。</body></html>";
+        let res = parse_post_response(sample);
+        assert_eq!(res.status, PostResponseStatus::Success);
+    }
+
+    #[test]
+    fn test_parse_post_response_confirm() {
+        let sample = r#"<html><head><title>投稿確認</title></head><body>
+            <form action="/test/bbs.cgi" method="POST">
+                <input type="hidden" name="bbs" value="tech">
+                <input type="hidden" name="time" value="1700000000">
+                <input type="submit" value="上記全てを承諾して書き込む">
+            </form>
+        </body></html>"#;
+        let res = parse_post_response(sample);
+        assert_eq!(res.status, PostResponseStatus::NeedConfirm);
+        assert_eq!(res.extra_params.get("bbs"), Some(&"tech".to_string()));
+        assert_eq!(res.extra_params.get("time"), Some(&"1700000000".to_string()));
+    }
+
+    #[test]
+    fn test_parse_post_response_error() {
+        let sample = "<html><head><title>ERROR</title></head><body><b>ERROR: 余所でやってください。</b></body></html>";
+        let res = parse_post_response(sample);
+        assert_eq!(res.status, PostResponseStatus::Error);
+        assert!(res.message.contains("余所でやってください"));
     }
 }

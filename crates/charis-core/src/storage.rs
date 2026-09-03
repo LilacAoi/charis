@@ -1,5 +1,8 @@
 use crate::error::Result;
-use crate::models::{BoardItem, BookmarkThreadItem, HistoryThreadItem, NGSettings, ThreadItem};
+use crate::models::{
+    AppSettings, BoardItem, BookmarkThreadItem, HistoryThreadItem, NGSettings, ThreadItem,
+};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -52,6 +55,14 @@ impl StorageManager {
 
     fn ng_settings_path(&self) -> PathBuf {
         self.base_dir.join("ng_settings.json")
+    }
+
+    fn settings_path(&self) -> PathBuf {
+        self.base_dir.join("settings.json")
+    }
+
+    fn read_positions_path(&self) -> PathBuf {
+        self.base_dir.join("read_positions.json")
     }
 
     // --- Favorites ---
@@ -182,6 +193,27 @@ impl StorageManager {
         self.write_json(&self.ng_settings_path(), settings)
     }
 
+    // --- App Settings ---
+    pub fn get_app_settings(&self) -> AppSettings {
+        self.read_json(&self.settings_path()).unwrap_or_default()
+    }
+
+    pub fn save_app_settings(&self, settings: &AppSettings) -> Result<()> {
+        self.write_json(&self.settings_path(), settings)
+    }
+
+    // --- Read Positions (Bookmarks/Scroll positions) ---
+    pub fn get_read_positions(&self) -> HashMap<String, u32> {
+        self.read_json(&self.read_positions_path())
+            .unwrap_or_default()
+    }
+
+    pub fn save_read_position(&self, key: &str, res_number: u32) -> Result<()> {
+        let mut map = self.get_read_positions();
+        map.insert(key.to_string(), res_number);
+        self.write_json(&self.read_positions_path(), &map)
+    }
+
     // Helper functions
     fn read_json<T: serde::de::DeserializeOwned>(&self, path: &PathBuf) -> Option<T> {
         if !path.exists() {
@@ -225,6 +257,42 @@ mod tests {
 
         storage.remove_favorite("mevius", "tech").unwrap();
         assert!(!storage.is_favorite("mevius", "tech"));
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_storage_app_settings() {
+        let temp_dir = std::env::temp_dir().join(format!("charis_settings_test_{}", std::process::id()));
+        let storage = StorageManager::new(temp_dir.clone());
+
+        let default_settings = storage.get_app_settings();
+        assert_eq!(default_settings.ui_font_size, 13);
+        assert_eq!(default_settings.post_font_size, 14);
+
+        let mut updated = default_settings.clone();
+        updated.ui_font_size = 16;
+        updated.post_font_family = "MS PMincho".into();
+        storage.save_app_settings(&updated).unwrap();
+
+        let loaded = storage.get_app_settings();
+        assert_eq!(loaded.ui_font_size, 16);
+        assert_eq!(loaded.post_font_family, "MS PMincho");
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_storage_read_positions() {
+        let temp_dir = std::env::temp_dir().join(format!("charis_read_pos_test_{}", std::process::id()));
+        let storage = StorageManager::new(temp_dir.clone());
+
+        let positions = storage.get_read_positions();
+        assert!(positions.is_empty());
+
+        storage.save_read_position("server_board_12345", 42).unwrap();
+        let loaded = storage.get_read_positions();
+        assert_eq!(loaded.get("server_board_12345"), Some(&42));
 
         let _ = fs::remove_dir_all(temp_dir);
     }

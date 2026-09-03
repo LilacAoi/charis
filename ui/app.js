@@ -17,6 +17,26 @@
   }
 
   // App State
+  const DEFAULT_APP_SETTINGS = {
+    uiFontFamily: "'M PLUS 1', 'M PLUS 1p', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    uiFontSize: 13,
+    postFontFamily: "",
+    postFontSize: 14,
+    postLineHeight: 1.65,
+    defaultBlurImages: true,
+    scrollAmount: 120,
+    theme: "dark",
+    initialScrollPosition: "top",
+    defaultName: "",
+    defaultMail: "sage"
+  };
+  let appSettings = Object.assign({}, DEFAULT_APP_SETTINGS);
+  let saveSettingsTimeout = null;
+  let readPositions = {};
+  let saveReadPosTimeout = null;
+  let pendingConfirmParams = null;
+  let isPosting = false;
+
   let categories = [];
   let favorites = [];
   let bookmarks = [];
@@ -89,6 +109,51 @@
   const btnAddNGWord = document.getElementById('btnAddNGWord');
   const ngWordChips = document.getElementById('ngWordChips');
 
+  // Settings Modal Elements
+  const settingsModalOverlay = document.getElementById('settingsModalOverlay');
+  const btnCloseSettingsModal = document.getElementById('btnCloseSettingsModal');
+  const btnOpenSettingsModal = document.getElementById('btnOpenSettingsModal');
+  const btnOpenSettingsModalToolbar = document.getElementById('btnOpenSettingsModalToolbar');
+  const btnResetSettings = document.getElementById('btnResetSettings');
+  const btnSaveSettings = document.getElementById('btnSaveSettings');
+  const selectUiFont = document.getElementById('selectUiFont');
+  const groupCustomUiFont = document.getElementById('groupCustomUiFont');
+  const inputCustomUiFont = document.getElementById('inputCustomUiFont');
+  const rangeUiFontSize = document.getElementById('rangeUiFontSize');
+  const valUiFontSize = document.getElementById('valUiFontSize');
+  const selectPostFont = document.getElementById('selectPostFont');
+  const groupCustomPostFont = document.getElementById('groupCustomPostFont');
+  const inputCustomPostFont = document.getElementById('inputCustomPostFont');
+  const rangePostFontSize = document.getElementById('rangePostFontSize');
+  const valPostFontSize = document.getElementById('valPostFontSize');
+  const rangePostLineHeight = document.getElementById('rangePostLineHeight');
+  const valPostLineHeight = document.getElementById('valPostLineHeight');
+  const checkDefaultBlurImages = document.getElementById('checkDefaultBlurImages');
+  const selectInitialScroll = document.getElementById('selectInitialScroll');
+  const rangeScrollAmount = document.getElementById('rangeScrollAmount');
+  const valScrollAmount = document.getElementById('valScrollAmount');
+  const inputDefaultName = document.getElementById('inputDefaultName');
+  const inputDefaultMail = document.getElementById('inputDefaultMail');
+  const settingsPreviewBox = document.getElementById('settingsPreviewBox');
+  const previewPostBody = document.getElementById('previewPostBody');
+
+  // Post Modal Elements
+  const btnOpenPostModal = document.getElementById('btnOpenPostModal');
+  const postModalOverlay = document.getElementById('postModalOverlay');
+  const postModalTitle = document.getElementById('postModalTitle');
+  const btnClosePostModal = document.getElementById('btnClosePostModal');
+  const postConfirmNotice = document.getElementById('postConfirmNotice');
+  const postConfirmMessage = document.getElementById('postConfirmMessage');
+  const postErrorNotice = document.getElementById('postErrorNotice');
+  const inputPostName = document.getElementById('inputPostName');
+  const inputPostMail = document.getElementById('inputPostMail');
+  const btnToggleSage = document.getElementById('btnToggleSage');
+  const textareaPostBody = document.getElementById('textareaPostBody');
+  const btnCancelPost = document.getElementById('btnCancelPost');
+  const btnSubmitPost = document.getElementById('btnSubmitPost');
+  const btnSubmitPostText = document.getElementById('btnSubmitPostText');
+  const postStatusText = document.getElementById('postStatusText');
+
   // Splitters
   const splitterSidebar = document.getElementById('splitterSidebar');
   const sidebar = document.getElementById('sidebar');
@@ -120,14 +185,30 @@
     // 1. 板一覧を最優先で取得開始
     loadBBSMenu();
 
-    // 2. ストレージ情報（お気に入り・履歴・NG設定）を並行ロード
+    // 2. ストレージ情報（お気に入り・履歴・NG設定・アプリ設定）を並行ロード
     try {
-      [favorites, bookmarks, history, ngSettings] = await Promise.all([
+      let loadedSettings = null;
+      let loadedReadPositions = {};
+      [favorites, bookmarks, history, ngSettings, loadedSettings, loadedReadPositions] = await Promise.all([
         invokeTauri('get_favorites').catch(e => { console.warn("get_favorites failed:", e); return []; }),
         invokeTauri('get_bookmarks').catch(e => { console.warn("get_bookmarks failed:", e); return []; }),
         invokeTauri('get_history').catch(e => { console.warn("get_history failed:", e); return []; }),
         invokeTauri('get_ng_settings').catch(e => { console.warn("get_ng_settings failed:", e); return { ngWords: [], ngIds: [], ngMode: 'abone', chainAbone: true }; }),
+        invokeTauri('get_app_settings').catch(e => { console.warn("get_app_settings failed:", e); return null; }),
+        invokeTauri('get_read_positions').catch(e => { console.warn("get_read_positions failed:", e); return {}; }),
       ]);
+
+      if (loadedReadPositions && typeof loadedReadPositions === 'object') {
+        readPositions = loadedReadPositions;
+      }
+
+      if (loadedSettings) {
+        appSettings = Object.assign({}, DEFAULT_APP_SETTINGS, loadedSettings);
+      }
+      applySettings(appSettings, false);
+      setupSettingsUI();
+      setupScrollPositionTracker();
+      setupPostModalUI();
 
       renderFavorites();
       renderBookmarks();
@@ -427,6 +508,10 @@
       }
       rawPosts = content.posts;
       renderAllPosts();
+      if (currentBoard && currentThread) {
+        const threadKey = `${currentBoard.server}_${currentBoard.board}_${currentThread.id}`;
+        applyInitialScroll(threadKey);
+      }
     } catch (e) {
       postsList.innerHTML = `<div class="empty-content-message" style="color:#ff6b6b;">スレッドの読み込みに失敗: ${escapeHtml(e)}</div>`;
     }
@@ -538,6 +623,57 @@
     attachPostEvents(postsList);
   }
 
+  function applyInitialScroll(threadKey) {
+    const mode = appSettings.initialScrollPosition || 'top';
+    requestAnimationFrame(() => {
+      if (mode === 'bottom') {
+        postsContainer.scrollTop = postsContainer.scrollHeight;
+      } else if (mode === 'lastRead') {
+        const lastNum = readPositions[threadKey];
+        if (lastNum && lastNum > 1) {
+          const targetEl = document.getElementById(`post-${lastNum}`);
+          if (targetEl) {
+            targetEl.scrollIntoView({ behavior: 'auto', block: 'start' });
+            return;
+          }
+        }
+        postsContainer.scrollTop = 0;
+      } else {
+        postsContainer.scrollTop = 0;
+      }
+    });
+  }
+
+  function setupScrollPositionTracker() {
+    postsContainer.addEventListener('scroll', () => {
+      if (!currentBoard || !currentThread) return;
+      const threadKey = `${currentBoard.server}_${currentBoard.board}_${currentThread.id}`;
+      if (saveReadPosTimeout) clearTimeout(saveReadPosTimeout);
+      saveReadPosTimeout = setTimeout(() => {
+        const topNum = getTopVisiblePostNumber();
+        if (topNum > 0) {
+          readPositions[threadKey] = topNum;
+          invokeTauri('save_read_position', { key: threadKey, resNumber: topNum }).catch(e => {
+            console.warn("Failed to save read position:", e);
+          });
+        }
+      }, 350);
+    });
+  }
+
+  function getTopVisiblePostNumber() {
+    const posts = postsContainer.querySelectorAll('.post:not(.transparent-ng)');
+    const containerTop = postsContainer.getBoundingClientRect().top;
+    for (const p of posts) {
+      const rect = p.getBoundingClientRect();
+      if (rect.bottom > containerTop + 20) {
+        const num = parseInt(p.id.replace('post-', ''), 10);
+        if (!isNaN(num)) return num;
+      }
+    }
+    return 1;
+  }
+
   function createPostHtml(p, isNew = false) {
     const isNG = ngPostNumbers.has(p.number);
     const isTransparent = isNG && ngSettings.ngMode === 'transparent';
@@ -603,6 +739,7 @@
         ${isHotPost ? '<span class="hot-badge">🔥 注目</span>' : ''}
 
         <div class="post-actions">
+          <button class="action-icon-btn reply-btn" data-action="reply-post" data-num="${p.number}" title=">>${p.number} に返信">💬 返信</button>
           ${p.id ? `<button class="action-icon-btn ng-btn" data-action="ng-id" data-id="${escapeHtml(p.id)}" title="このIDをNG登録">🚫 NG</button>` : ''}
           <button class="action-icon-btn" data-action="copy-res" data-num="${p.number}" title=">>${p.number} をコピー">📋 コピー</button>
         </div>
@@ -723,6 +860,15 @@
       el.onclick = () => {
         const id = el.getAttribute('data-id');
         openIdModal(id);
+      };
+    });
+
+    // Quick Action: Reply Post
+    container.querySelectorAll('[data-action="reply-post"]').forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const num = btn.getAttribute('data-num');
+        openPostModal(`>>${num}\n`);
       };
     });
 
@@ -869,6 +1015,401 @@
   btnOpenNGModal.onclick = openNGModal;
   btnCloseNGModal.onclick = () => ngModalOverlay.classList.remove('open');
   ngModalOverlay.onclick = (e) => { if (e.target === ngModalOverlay) ngModalOverlay.classList.remove('open'); };
+
+  // --- Settings Modal & Application Configuration ---
+  function applySettings(settings, save = true) {
+    if (!settings) return;
+    appSettings = Object.assign({}, DEFAULT_APP_SETTINGS, settings);
+
+    // Apply CSS Variables to Document Root
+    const rootStyle = document.documentElement.style;
+    rootStyle.setProperty('--ui-font-family', appSettings.uiFontFamily);
+    rootStyle.setProperty('--ui-font-size', `${appSettings.uiFontSize}px`);
+
+    const effectivePostFont = appSettings.postFontFamily && appSettings.postFontFamily.trim() !== ''
+      ? appSettings.postFontFamily
+      : appSettings.uiFontFamily;
+    rootStyle.setProperty('--post-font-family', effectivePostFont);
+    rootStyle.setProperty('--post-font-size', `${appSettings.postFontSize}px`);
+    rootStyle.setProperty('--post-line-height', String(appSettings.postLineHeight));
+
+    // Update internal state
+    blurImages = appSettings.defaultBlurImages ?? true;
+
+    // Update Live Preview box in Settings modal
+    updateSettingsPreview();
+
+    // Sync input controls with appSettings
+    syncSettingsControls();
+
+    if (save) {
+      debounceSaveSettings();
+    }
+  }
+
+  function updateSettingsPreview() {
+    if (!settingsPreviewBox) return;
+    const effectivePostFont = appSettings.postFontFamily && appSettings.postFontFamily.trim() !== ''
+      ? appSettings.postFontFamily
+      : appSettings.uiFontFamily;
+
+    const uiSample = settingsPreviewBox.querySelector('.preview-ui-sample');
+    if (uiSample) {
+      uiSample.style.fontFamily = appSettings.uiFontFamily;
+      uiSample.style.fontSize = `${appSettings.uiFontSize}px`;
+    }
+
+    if (previewPostBody) {
+      previewPostBody.style.fontFamily = effectivePostFont;
+      previewPostBody.style.fontSize = `${appSettings.postFontSize}px`;
+      previewPostBody.style.lineHeight = String(appSettings.postLineHeight);
+    }
+  }
+
+  function syncSettingsControls() {
+    if (!selectUiFont) return;
+
+    // UI Font
+    const uiOptions = Array.from(selectUiFont.options).map(o => o.value);
+    if (uiOptions.includes(appSettings.uiFontFamily)) {
+      selectUiFont.value = appSettings.uiFontFamily;
+      groupCustomUiFont.style.display = 'none';
+    } else {
+      selectUiFont.value = 'custom';
+      groupCustomUiFont.style.display = 'block';
+      inputCustomUiFont.value = appSettings.uiFontFamily;
+    }
+
+    rangeUiFontSize.value = appSettings.uiFontSize;
+    valUiFontSize.textContent = `${appSettings.uiFontSize}px`;
+
+    // Post Font
+    const postOptions = Array.from(selectPostFont.options).map(o => o.value);
+    if (postOptions.includes(appSettings.postFontFamily)) {
+      selectPostFont.value = appSettings.postFontFamily;
+      groupCustomPostFont.style.display = 'none';
+    } else {
+      selectPostFont.value = 'custom';
+      groupCustomPostFont.style.display = 'block';
+      inputCustomPostFont.value = appSettings.postFontFamily;
+    }
+
+    rangePostFontSize.value = appSettings.postFontSize;
+    valPostFontSize.textContent = `${appSettings.postFontSize}px`;
+
+    rangePostLineHeight.value = appSettings.postLineHeight;
+    valPostLineHeight.textContent = Number(appSettings.postLineHeight).toFixed(2);
+
+    // General
+    checkDefaultBlurImages.checked = appSettings.defaultBlurImages;
+    if (selectInitialScroll) selectInitialScroll.value = appSettings.initialScrollPosition || 'top';
+    rangeScrollAmount.value = appSettings.scrollAmount;
+    valScrollAmount.textContent = `${appSettings.scrollAmount}px`;
+    if (inputDefaultName) inputDefaultName.value = appSettings.defaultName || '';
+    if (inputDefaultMail) inputDefaultMail.value = appSettings.defaultMail !== undefined ? appSettings.defaultMail : 'sage';
+  }
+
+  function debounceSaveSettings() {
+    if (saveSettingsTimeout) {
+      clearTimeout(saveSettingsTimeout);
+    }
+    saveSettingsTimeout = setTimeout(async () => {
+      try {
+        await invokeTauri('save_app_settings', { settings: appSettings });
+      } catch (err) {
+        console.error("Failed to save app settings:", err);
+      }
+    }, 300);
+  }
+
+  function openSettingsModal() {
+    syncSettingsControls();
+    updateSettingsPreview();
+    settingsModalOverlay.classList.add('open');
+  }
+
+  function closeSettingsModal() {
+    settingsModalOverlay.classList.remove('open');
+    if (saveSettingsTimeout) {
+      clearTimeout(saveSettingsTimeout);
+    }
+    invokeTauri('save_app_settings', { settings: appSettings }).catch(e => console.error(e));
+  }
+
+  function setupSettingsUI() {
+    // Open & Close
+    if (btnOpenSettingsModal) btnOpenSettingsModal.onclick = openSettingsModal;
+    if (btnOpenSettingsModalToolbar) btnOpenSettingsModalToolbar.onclick = openSettingsModal;
+    if (btnCloseSettingsModal) btnCloseSettingsModal.onclick = closeSettingsModal;
+    if (btnSaveSettings) btnSaveSettings.onclick = closeSettingsModal;
+    if (settingsModalOverlay) {
+      settingsModalOverlay.onclick = (e) => {
+        if (e.target === settingsModalOverlay) closeSettingsModal();
+      };
+    }
+
+    // Tabs
+    const tabBtns = settingsModalOverlay.querySelectorAll('.settings-tab-btn');
+    const tabContents = settingsModalOverlay.querySelectorAll('.settings-tab-content');
+    tabBtns.forEach(btn => {
+      btn.onclick = () => {
+        const targetId = btn.getAttribute('data-tab');
+        tabBtns.forEach(b => b.classList.toggle('active', b === btn));
+        tabContents.forEach(c => c.classList.toggle('active', c.id === targetId));
+      };
+    });
+
+    // UI Font Select & Input
+    selectUiFont.onchange = () => {
+      if (selectUiFont.value === 'custom') {
+        groupCustomUiFont.style.display = 'block';
+        if (!inputCustomUiFont.value) inputCustomUiFont.value = appSettings.uiFontFamily;
+        appSettings.uiFontFamily = inputCustomUiFont.value.trim() || DEFAULT_APP_SETTINGS.uiFontFamily;
+      } else {
+        groupCustomUiFont.style.display = 'none';
+        appSettings.uiFontFamily = selectUiFont.value;
+      }
+      applySettings(appSettings, true);
+    };
+
+    inputCustomUiFont.oninput = () => {
+      if (selectUiFont.value === 'custom') {
+        appSettings.uiFontFamily = inputCustomUiFont.value.trim() || DEFAULT_APP_SETTINGS.uiFontFamily;
+        applySettings(appSettings, true);
+      }
+    };
+
+    // UI Font Size Slider
+    rangeUiFontSize.oninput = () => {
+      appSettings.uiFontSize = parseInt(rangeUiFontSize.value, 10);
+      valUiFontSize.textContent = `${appSettings.uiFontSize}px`;
+      applySettings(appSettings, true);
+    };
+
+    // Post Font Select & Input
+    selectPostFont.onchange = () => {
+      if (selectPostFont.value === 'custom') {
+        groupCustomPostFont.style.display = 'block';
+        if (!inputCustomPostFont.value) inputCustomPostFont.value = appSettings.postFontFamily;
+        appSettings.postFontFamily = inputCustomPostFont.value.trim();
+      } else {
+        groupCustomPostFont.style.display = 'none';
+        appSettings.postFontFamily = selectPostFont.value;
+      }
+      applySettings(appSettings, true);
+    };
+
+    inputCustomPostFont.oninput = () => {
+      if (selectPostFont.value === 'custom') {
+        appSettings.postFontFamily = inputCustomPostFont.value.trim();
+        applySettings(appSettings, true);
+      }
+    };
+
+    // Post Font Size Slider
+    rangePostFontSize.oninput = () => {
+      appSettings.postFontSize = parseInt(rangePostFontSize.value, 10);
+      valPostFontSize.textContent = `${appSettings.postFontSize}px`;
+      applySettings(appSettings, true);
+    };
+
+    // Post Line Height Slider
+    rangePostLineHeight.oninput = () => {
+      appSettings.postLineHeight = parseFloat(rangePostLineHeight.value);
+      valPostLineHeight.textContent = Number(appSettings.postLineHeight).toFixed(2);
+      applySettings(appSettings, true);
+    };
+
+    // Image Blur Checkbox
+    checkDefaultBlurImages.onchange = () => {
+      appSettings.defaultBlurImages = checkDefaultBlurImages.checked;
+      applySettings(appSettings, true);
+      renderAllPosts();
+    };
+
+    // Initial Scroll Position Select
+    if (selectInitialScroll) {
+      selectInitialScroll.onchange = () => {
+        appSettings.initialScrollPosition = selectInitialScroll.value;
+        applySettings(appSettings, true);
+      };
+    }
+
+    // Scroll Amount Slider
+    rangeScrollAmount.oninput = () => {
+      appSettings.scrollAmount = parseInt(rangeScrollAmount.value, 10);
+      valScrollAmount.textContent = `${appSettings.scrollAmount}px`;
+      applySettings(appSettings, true);
+    };
+
+    // Default Name & Mail
+    if (inputDefaultName) {
+      inputDefaultName.oninput = () => {
+        appSettings.defaultName = inputDefaultName.value.trim();
+        debounceSaveSettings();
+      };
+    }
+    if (inputDefaultMail) {
+      inputDefaultMail.oninput = () => {
+        appSettings.defaultMail = inputDefaultMail.value.trim();
+        debounceSaveSettings();
+      };
+    }
+
+    // Reset to Default
+    btnResetSettings.onclick = () => {
+      if (confirm('すべての設定を初期値に戻しますか？')) {
+        applySettings(DEFAULT_APP_SETTINGS, true);
+        renderAllPosts();
+      }
+    };
+  }
+
+  // --- Post Compose Modal UI ---
+  function openPostModal(initialBody = '') {
+    if (!currentBoard || !currentThread) {
+      alert('書き込むスレッドを選択してください。');
+      return;
+    }
+
+    postModalTitle.textContent = `✍️ レス書き込み - ${currentThread.title}`;
+    inputPostName.value = appSettings.defaultName || '';
+    inputPostMail.value = appSettings.defaultMail !== undefined ? appSettings.defaultMail : 'sage';
+
+    if (initialBody) {
+      textareaPostBody.value = initialBody;
+    }
+
+    postConfirmNotice.style.display = 'none';
+    postErrorNotice.style.display = 'none';
+    postStatusText.textContent = '';
+    btnSubmitPostText.textContent = '書き込む (Ctrl+Enter)';
+    btnSubmitPost.disabled = false;
+    pendingConfirmParams = null;
+    isPosting = false;
+
+    postModalOverlay.classList.add('open');
+    setTimeout(() => {
+      textareaPostBody.focus();
+      textareaPostBody.setSelectionRange(textareaPostBody.value.length, textareaPostBody.value.length);
+    }, 60);
+  }
+
+  function closePostModal() {
+    postModalOverlay.classList.remove('open');
+    pendingConfirmParams = null;
+    isPosting = false;
+    postStatusText.textContent = '';
+  }
+
+  async function submitPost(confirmParams = null) {
+    if (isPosting) return;
+    if (!currentBoard || !currentThread) {
+      alert('スレッドが選択されていません。');
+      return;
+    }
+
+    const body = textareaPostBody.value.trim();
+    if (!body) {
+      postErrorNotice.textContent = '本文を入力してください。';
+      postErrorNotice.style.display = 'block';
+      textareaPostBody.focus();
+      return;
+    }
+
+    isPosting = true;
+    postErrorNotice.style.display = 'none';
+    btnSubmitPost.disabled = true;
+    postStatusText.textContent = confirmParams ? '承諾確認を送信中...' : '書き込み中...';
+    btnSubmitPostText.textContent = '送信中...';
+
+    const payload = {
+      server: currentBoard.server,
+      board: currentBoard.board,
+      key: currentThread.id,
+      name: inputPostName.value.trim(),
+      mail: inputPostMail.value.trim(),
+      body: textareaPostBody.value,
+      extraParams: confirmParams || {},
+    };
+
+    try {
+      const result = await invokeTauri('post_comment', { payload });
+      if (result.status === 'success') {
+        postStatusText.textContent = '書き込み完了！';
+        setTimeout(async () => {
+          closePostModal();
+          textareaPostBody.value = '';
+          await refreshCurrentThread();
+          // 最新レスへスクロール
+          postsContainer.scrollTop = postsContainer.scrollHeight;
+        }, 400);
+      } else if (result.status === 'needConfirm') {
+        // 5ch サーバーからの投稿確認・クッキー確認要求
+        pendingConfirmParams = Object.assign({}, result.extraParams || {});
+        pendingConfirmParams.submit = '上記全てを承諾して書き込む';
+        postConfirmNotice.style.display = 'flex';
+        postConfirmMessage.textContent = result.message || 'サーバーから投稿の確認が求められました。';
+        btnSubmitPostText.textContent = '承諾して書き込む (Ctrl+Enter)';
+        btnSubmitPost.disabled = false;
+        postStatusText.textContent = '承諾が必要です';
+        isPosting = false;
+      } else {
+        // エラー（規制、NGワード、考え中等）
+        postErrorNotice.textContent = result.message || '書き込みエラーが発生しました。';
+        postErrorNotice.style.display = 'block';
+        btnSubmitPostText.textContent = '書き込む (Ctrl+Enter)';
+        btnSubmitPost.disabled = false;
+        postStatusText.textContent = 'エラー';
+        isPosting = false;
+      }
+    } catch (err) {
+      console.error("post_comment failed:", err);
+      postErrorNotice.textContent = `通信エラー: ${err}`;
+      postErrorNotice.style.display = 'block';
+      btnSubmitPostText.textContent = '書き込む (Ctrl+Enter)';
+      btnSubmitPost.disabled = false;
+      postStatusText.textContent = 'エラー';
+      isPosting = false;
+    }
+  }
+
+  function setupPostModalUI() {
+    if (btnOpenPostModal) btnOpenPostModal.onclick = () => openPostModal();
+    if (btnClosePostModal) btnClosePostModal.onclick = closePostModal;
+    if (btnCancelPost) btnCancelPost.onclick = closePostModal;
+
+    if (postModalOverlay) {
+      postModalOverlay.onclick = (e) => {
+        if (e.target === postModalOverlay) closePostModal();
+      };
+    }
+
+    if (btnToggleSage) {
+      btnToggleSage.onclick = () => {
+        if (inputPostMail.value.trim().toLowerCase() === 'sage') {
+          inputPostMail.value = '';
+        } else {
+          inputPostMail.value = 'sage';
+        }
+      };
+    }
+
+    if (btnSubmitPost) {
+      btnSubmitPost.onclick = () => {
+        submitPost(pendingConfirmParams);
+      };
+    }
+
+    if (textareaPostBody) {
+      textareaPostBody.onkeydown = (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          submitPost(pendingConfirmParams);
+        }
+      };
+    }
+  }
 
   // --- Refresh Threads & Posts ---
   async function refreshCurrentThread() {
@@ -1040,8 +1581,13 @@
       }
 
       if (e.key === 'Escape') {
+        if (postModalOverlay && postModalOverlay.classList.contains('open')) {
+          closePostModal();
+          return;
+        }
         idModalOverlay.classList.remove('open');
         ngModalOverlay.classList.remove('open');
+        settingsModalOverlay.classList.remove('open');
         return;
       }
 
@@ -1274,6 +1820,20 @@
       // 3. Thread Content Focus
       // ==========================================
       if (activePane === 'content') {
+        // 'w' -> Open post compose modal
+        if (e.key === 'w' || e.key === 'W') {
+          e.preventDefault();
+          openPostModal();
+          return;
+        }
+
+        // 'r' -> Refresh current thread
+        if (e.key === 'r' || e.key === 'R') {
+          e.preventDefault();
+          refreshCurrentThread();
+          return;
+        }
+
         // Shift+j (J) -> Half page scroll down
         if (e.key === 'J' || (e.shiftKey && (e.key === 'j' || e.key === 'J'))) {
           e.preventDefault();
@@ -1291,14 +1851,16 @@
         // j / ArrowDown -> Scroll down smoothly (small step)
         if ((e.key === 'j' && !e.shiftKey) || e.key === 'ArrowDown') {
           e.preventDefault();
-          postsContainer.scrollBy({ top: 120, behavior: 'smooth' });
+          const step = appSettings.scrollAmount || 120;
+          postsContainer.scrollBy({ top: step, behavior: 'smooth' });
           return;
         }
 
         // k / ArrowUp -> Scroll up smoothly (small step)
         if ((e.key === 'k' && !e.shiftKey) || e.key === 'ArrowUp') {
           e.preventDefault();
-          postsContainer.scrollBy({ top: -120, behavior: 'smooth' });
+          const step = appSettings.scrollAmount || 120;
+          postsContainer.scrollBy({ top: -step, behavior: 'smooth' });
           return;
         }
 
