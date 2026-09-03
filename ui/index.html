@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>charis - 5ch Dedicated Browser</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+1:wght@300;400;500;700&family=M+PLUS+1p:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Left Pane: Sidebar (Boards / Bookmarks / History) -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span class="app-title">charis</span>
+        <button class="icon-btn" id="btnRefreshBbs" title="板一覧を再取得 (r)">🔄</button>
+      </div>
+
+      <div class="sidebar-content" id="sidebarContent">
+        <!-- Favorites Section -->
+        <div class="tree-section">
+          <div class="tree-section-header" data-target="favoritesList">
+            <span class="tree-toggle">▼</span>
+            <span class="tree-icon">★</span>
+            <span class="tree-title">お気に入り板</span>
+            <span class="tree-badge" id="favCountBadge">0</span>
+          </div>
+          <div class="tree-list" id="favoritesList"></div>
+        </div>
+
+        <!-- Bookmarks Section -->
+        <div class="tree-section">
+          <div class="tree-section-header" data-target="bookmarksList">
+            <span class="tree-toggle">▼</span>
+            <span class="tree-icon">📌</span>
+            <span class="tree-title">ブックマーク</span>
+            <span class="tree-badge" id="bmCountBadge">0</span>
+          </div>
+          <div class="tree-list" id="bookmarksList"></div>
+        </div>
+
+        <!-- History Section -->
+        <div class="tree-section">
+          <div class="tree-section-header" data-target="historyList">
+            <span class="tree-toggle">▶</span>
+            <span class="tree-icon">🕒</span>
+            <span class="tree-title">閲覧履歴</span>
+            <span class="tree-badge" id="historyCountBadge">0</span>
+            <button class="clear-history-btn" id="btnClearHistory" title="履歴消去">🗑️</button>
+          </div>
+          <div class="tree-list collapsed" id="historyList"></div>
+        </div>
+
+        <!-- All Boards Section -->
+        <div class="tree-section">
+          <div class="tree-section-header" data-target="allBoardsList">
+            <span class="tree-toggle">▼</span>
+            <span class="tree-icon">📁</span>
+            <span class="tree-title">すべての板</span>
+            <span class="tree-badge" id="allBoardsCountBadge">...</span>
+          </div>
+          <div class="tree-list" id="allBoardsList">
+            <div class="loading-item">板一覧を取得中...</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Sidebar Splitter -->
+    <div class="splitter-v" id="splitterSidebar"></div>
+
+    <!-- Main Content (Right) -->
+    <main class="main-area">
+      <!-- Top Pane: Thread List -->
+      <section class="pane-threads" id="paneThreads">
+        <div class="toolbar">
+          <span class="board-info">
+            <span class="fav-star" id="btnToggleFavBoard" title="お気に入りを切り替え">☆</span>
+            <span class="current-board-name" id="currentBoardName">板を選択してください</span>
+          </span>
+          <div class="search-box">
+            <input type="text" id="threadSearchInput" class="search-input" placeholder="スレッド検索 (/)..." />
+          </div>
+          <div class="btn-group">
+            <button class="btn active" id="btnSortIkioi" title="勢い順">勢い順</button>
+            <button class="btn" id="btnSortRes" title="レス数順">レス数順</button>
+            <button class="btn" id="btnSortNew" title="新着順">新着順</button>
+            <button class="btn" id="btnSortDefault" title="番号順">番号順</button>
+            <button class="btn" id="btnRefreshThreads" title="スレッド一覧を更新 (r)">🔄 更新</button>
+          </div>
+          <span class="thread-count-badge" id="threadCountBadge">0 スレッド</span>
+        </div>
+
+        <div class="table-container" id="threadTableContainer">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 48px; text-align: right;">#</th>
+                <th>スレッドタイトル</th>
+                <th style="width: 80px; text-align: right;">レス数</th>
+                <th style="width: 90px; text-align: right;" class="sort-active">勢い</th>
+              </tr>
+            </thead>
+            <tbody id="threadTableBody">
+              <tr>
+                <td colspan="4" class="empty-cell">左の板一覧から板を選択してください</td>
+              </tr>
+            </tbody>
+          </table>
+          <div id="emptyThreadsMessage" class="empty-message" style="display: none;">
+            該当するスレッドが見つかりませんでした
+          </div>
+        </div>
+      </section>
+
+      <!-- Main Horizontal Splitter -->
+      <div class="splitter-h" id="splitterMain"></div>
+
+      <!-- Bottom Pane: Thread Content -->
+      <section class="pane-content" id="paneContent">
+        <div class="thread-toolbar">
+          <div class="thread-main-info">
+            <div class="thread-title" id="threadTitle" title="スレッド未選択">スレッド未選択</div>
+            <div class="thread-meta">
+              <span id="threadBoardLabel">板: -</span>
+              <span>•</span>
+              <span id="threadResCountLabel">0 レス</span>
+              <span id="autoReloadIndicator" style="display: none; color: #4caf50;">● 自動更新中</span>
+            </div>
+          </div>
+          <div class="toolbar-actions">
+            <button class="tool-btn" id="btnRefreshContent" title="新着レスを確認 (r)">
+              <span>🔄</span> <span>更新</span>
+            </button>
+            <select class="tool-select" id="selectAutoReload" title="自動更新間隔">
+              <option value="0">自動更新: オフ</option>
+              <option value="5">自動更新: 5秒 (実況)</option>
+              <option value="10">自動更新: 10秒</option>
+              <option value="30">自動更新: 30秒</option>
+              <option value="60">自動更新: 1分</option>
+            </select>
+            <button class="tool-btn" id="btnBookmarkThread" title="スレッドをブックマーク">
+              <span id="bmStarIcon">☆</span> <span id="bmLabel">保存</span>
+            </button>
+            <button class="tool-btn" id="btnOpenNGModal" title="NG設定（ID・ワード）">
+              <span>⚙️</span> <span>NG設定</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="posts-scroll-container" id="postsContainer">
+          <div id="postsList">
+            <div class="empty-content-message">
+              スレッドを選択すると本文が表示されます
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Anchor Hover Popup -->
+  <div id="anchorPopup" class="anchor-popup"></div>
+
+  <!-- Toast Notification for New Posts -->
+  <div id="toastNotification" class="toast-notification">
+    <span id="toastText">新着 +1 件</span> ↓
+  </div>
+
+  <!-- ID Posts Modal (同一ID抽出) -->
+  <div id="idModalOverlay" class="modal-overlay">
+    <div class="modal-window">
+      <div class="modal-header">
+        <div class="modal-title" id="idModalTitle">ID抽出</div>
+        <button class="modal-close-btn" id="btnCloseIdModal">&times;</button>
+      </div>
+      <div class="modal-body" id="idModalBody"></div>
+    </div>
+  </div>
+
+  <!-- NG Settings Modal -->
+  <div id="ngModalOverlay" class="modal-overlay">
+    <div class="modal-window">
+      <div class="modal-header">
+        <div class="modal-title">⚙️ NG設定・あぼーん管理</div>
+        <button class="modal-close-btn" id="btnCloseNGModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>表示方式</label>
+          <select id="ngModeSelect" class="tool-select" style="width: 100%; padding: 6px;">
+            <option value="abone">あぼーん表示（「NG指定により非表示 [表示する]」）</option>
+            <option value="transparent">透明あぼーん（画面から完全に消去）</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="chainAboneCheck" checked /> 連鎖あぼーん（NGレスへの返信アンカーもあぼーん）
+          </label>
+        </div>
+        <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 16px 0;" />
+        <div class="form-group">
+          <label>NG ID 一覧</label>
+          <div style="display: flex; gap: 6px;">
+            <input type="text" id="inputNewNGId" class="form-input" placeholder="追加するID (例: abcdef12)" />
+            <button class="tool-btn" id="btnAddNGId">追加</button>
+          </div>
+          <div class="chip-container" id="ngIdChips"></div>
+        </div>
+        <div class="form-group">
+          <label>NG ワード 一覧</label>
+          <div style="display: flex; gap: 6px;">
+            <input type="text" id="inputNewNGWord" class="form-input" placeholder="追加するNGワード" />
+            <button class="tool-btn" id="btnAddNGWord">追加</button>
+          </div>
+          <div class="chip-container" id="ngWordChips"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
