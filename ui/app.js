@@ -18,7 +18,7 @@
 
   // App State
   const DEFAULT_APP_SETTINGS = {
-    uiFontFamily: "'M PLUS 1', 'M PLUS 1p', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    uiFontFamily: "'M PLUS 1', 'M PLUS 1p', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif",
     uiFontSize: 13,
     postFontFamily: "",
     postFontSize: 14,
@@ -171,6 +171,51 @@
       .replace(/'/g, '&#039;');
   }
 
+  // Utility: Decode Numeric Character References & Restore Corrupted 16-bit Emojis
+  function decodeHtmlEntities(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&amp;#(x[0-9a-fA-F]+|\d+);|&#(x[0-9a-fA-F]+|\d+);/gi, (match, p1, p2) => {
+        const raw = p1 || p2;
+        const isHex = raw.toLowerCase().startsWith('x');
+        let code = isHex ? parseInt(raw.slice(1), 16) : parseInt(raw, 10);
+        if (isNaN(code)) return match;
+
+        // XSS防止: 危険文字 (<, >, &, ", ', /) や制御文字はエスケープ状態を維持
+        if (code === 60 || code === 62 || code === 38 || code === 34 || code === 39 || code === 47 || code < 32) {
+          return match;
+        }
+
+        // 5ch 特有の 16bit 桁落ち絵文字の救済復元 (0xF000〜0xFFFF ➔ 0x1F000〜0x1FFFF)
+        // 例: &#62978; (0xF602) + 0x10000 = 0x1F602 (😂)
+        if (code >= 0xF000 && code <= 0xFFFF) {
+          const shifted = code + 0x10000;
+          if (shifted >= 0x1F000 && shifted <= 0x1FAFF) {
+            try {
+              return String.fromCodePoint(shifted);
+            } catch (e) {
+              // fallback
+            }
+          }
+        }
+
+        try {
+          return String.fromCodePoint(code);
+        } catch (e) {
+          return match;
+        }
+      })
+      .replace(/&amp;(nbsp|amp|lt|gt|quot);/gi, (match, entity) => {
+        if (entity === 'nbsp') return ' ';
+        return match;
+      });
+  }
+
+  function formatSafeText(str) {
+    if (!str) return '';
+    return decodeHtmlEntities(escapeHtml(str));
+  }
+
   function getCleanDate(dateStr) {
     if (!dateStr) return '';
     return String(dateStr).replace(/\s*ID:[^\s]+/g, '').trim();
@@ -316,7 +361,7 @@
     }
     bookmarksList.innerHTML = bookmarks.map(bm => `
       <div class="tree-item" data-server="${escapeHtml(bm.board.server)}" data-board="${escapeHtml(bm.board.board)}" data-id="${escapeHtml(bm.thread.id)}" title="${escapeHtml(bm.thread.title)}">
-        <span>📌</span> <span style="overflow:hidden; text-overflow:ellipsis;">${escapeHtml(bm.thread.title)}</span>
+        <span>📌</span> <span style="overflow:hidden; text-overflow:ellipsis;">${formatSafeText(bm.thread.title)}</span>
       </div>
     `).join('');
 
@@ -344,7 +389,7 @@
     }
     historyList.innerHTML = history.map(h => `
       <div class="tree-item" data-server="${escapeHtml(h.board.server)}" data-board="${escapeHtml(h.board.board)}" data-id="${escapeHtml(h.thread.id)}" title="${escapeHtml(h.thread.title)}">
-        <span>🕒</span> <span style="overflow:hidden; text-overflow:ellipsis;">${escapeHtml(h.thread.title)}</span>
+        <span>🕒</span> <span style="overflow:hidden; text-overflow:ellipsis;">${formatSafeText(h.thread.title)}</span>
       </div>
     `).join('');
 
@@ -451,7 +496,7 @@
       return `
         <tr class="thread-row${isSelected ? ' selected' : ''}" data-id="${escapeHtml(t.id)}">
           <td class="thread-index">${idx + 1}</td>
-          <td class="thread-title-cell">${escapeHtml(t.title)}</td>
+          <td class="thread-title-cell">${formatSafeText(t.title)}</td>
           <td class="res-count">${t.resCount}</td>
           <td class="ikioi${ikioiClass}">${t.ikioi}</td>
         </tr>
@@ -473,8 +518,9 @@
   // --- Select Thread & Load Posts ---
   async function selectThread(thread) {
     currentThread = thread;
-    threadTitle.textContent = thread.title;
-    threadTitle.title = thread.title;
+    const decodedTitle = decodeHtmlEntities(thread.title);
+    threadTitle.textContent = decodedTitle;
+    threadTitle.title = decodedTitle;
     threadBoardLabel.textContent = `板: ${currentBoard ? currentBoard.name : '-'}`;
     threadResCountLabel.textContent = `${thread.resCount} レス`;
 
@@ -493,7 +539,7 @@
       });
     }
 
-    postsList.innerHTML = `<div class="empty-content-message">スレッド「${escapeHtml(thread.title)}」を読み込み中...</div>`;
+    postsList.innerHTML = `<div class="empty-content-message">スレッド「${formatSafeText(thread.title)}」を読み込み中...</div>`;
 
     try {
       const content = await invokeTauri('get_thread_posts', {
@@ -503,8 +549,9 @@
       });
 
       if (content.title) {
-        threadTitle.textContent = content.title;
-        threadTitle.title = content.title;
+        const decodedContentTitle = decodeHtmlEntities(content.title);
+        threadTitle.textContent = decodedContentTitle;
+        threadTitle.title = decodedContentTitle;
       }
       rawPosts = content.posts;
       renderAllPosts();
@@ -718,8 +765,8 @@
     return `
       <div class="post-header">
         <span class="num">${p.number}</span>
-        <span class="name"><b>${escapeHtml(p.name)}</b></span>
-        ${p.mail ? `<span class="mail">[${escapeHtml(p.mail)}]</span>` : ''}
+        <span class="name"><b>${formatSafeText(p.name)}</b></span>
+        ${p.mail ? `<span class="mail">[${formatSafeText(p.mail)}]</span>` : ''}
         <span class="date">${escapeHtml(getCleanDate(p.date))}</span>
 
         ${p.id ? `
@@ -778,6 +825,7 @@
       // 3. Strip remaining tags safely
       text = text.replace(/<[^>]*>/g, '');
       text = escapeHtml(text);
+      text = decodeHtmlEntities(text);
 
       // 4. Plain anchors
       text = text.replace(/(?:&gt;|[>＞]){1,2}(\d+)(?:-(\d+))?/g, (m, num, endNum) => {
