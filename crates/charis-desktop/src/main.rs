@@ -249,6 +249,15 @@ async fn post_comment(
 }
 
 fn main() {
+    #[cfg(target_os = "linux")]
+    unsafe {
+        // Wayland + WebKitGTK / NVIDIA / Explicit Sync 環境でのクラッシュ
+        // (wp_linux_drm_syncobj_surface_v1 "Missing acquire timeline" / Error 71) 回避
+        if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+    }
+
     let client = FiveChannelClient::new();
     let storage = StorageManager::new_default();
     let state = Arc::new(AppState { client, storage });

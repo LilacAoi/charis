@@ -75,6 +75,23 @@ cargo build --release -p charis-desktop
 ./target/release/charis-desktop
 ```
 
+### トラブルシューティング (Linux / Wayland / NVIDIA)
+
+Wayland（Hyprland や GNOME 等）環境かつ NVIDIA GPU を使用している環境で、WebKitGTK の Explicit Sync / DMA-BUF 実装に起因して以下のプロトコルエラーでアプリがクラッシュする場合があります：
+```text
+wl_display#1.error(wp_linux_drm_syncobj_surface_v1, 4, "Missing acquire timeline")
+Gdk-Message: Error 71 (プロトコルエラー) dispatching to Wayland display.
+```
+charis では内部で自動的に `WEBKIT_DISABLE_DMABUF_RENDERER=1` をフォールバック設定しているため通常は特別な指定なしで起動できますが、手動で制御したい場合は以下の環境変数を設定して起動してください：
+
+```bash
+# DMA-BUF レンダラーを無効化（推奨）
+WEBKIT_DISABLE_DMABUF_RENDERER=1 ./target/release/charis-desktop
+
+# または NVIDIA Explicit Sync を無効化
+__NV_DISABLE_EXPLICIT_SYNC=1 ./target/release/charis-desktop
+```
+
 ---
 
 ## キーバインド（クイックリファレンス）
