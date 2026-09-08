@@ -181,6 +181,7 @@ impl FiveChannelClient {
     }
 
     /// スレッド本文（DAT）の取得
+    /// 通常の /dat/{key}.dat が失敗した場合は、自動的に現役サーバ・過去ログサーバの /oyster/{sub}/{key}.dat へフォールバックします
     pub async fn get_thread_posts(
         &self,
         server: &str,
@@ -190,23 +191,37 @@ impl FiveChannelClient {
         self.ensure_rate_limit().await;
 
         let domains = ["5ch.io", "5ch.net"];
-        for domain in domains {
-            let url = format!("https://{server}.{domain}/{board}/dat/{key}.dat");
-            let res = self
-                .http_client
-                .get(&url)
-                .header(USER_AGENT, &self.user_agent)
-                .send()
-                .await;
 
-            if let Ok(response) = res {
-                if response.status().is_success() {
-                    if let Ok(bytes) = response.bytes().await {
-                        let text = decode_cp932(&bytes);
-                        let content = parse_dat(&text);
-                        if !content.posts.is_empty() {
-                            return Ok(content);
-                        }
+        // 1. 稼働中スレッド: https://{server}.{domain}/{board}/dat/{key}.dat
+        for domain in &domains {
+            let url = format!("https://{server}.{domain}/{board}/dat/{key}.dat");
+            if let Ok(content) = self.fetch_and_parse_dat(&url, false).await {
+                return Ok(content);
+            }
+        }
+
+        // 2. DAT落ちスレッド: oyster 形式 (key の上位4桁)
+        if key.len() >= 4 {
+            let sub = &key[..4];
+
+            // 2-1. 現役サーバの oyster
+            for domain in &domains {
+                let url = format!("https://{server}.{domain}/{board}/oyster/{sub}/{key}.dat");
+                if let Ok(content) = self.fetch_and_parse_dat(&url, true).await {
+                    return Ok(content);
+                }
+            }
+
+            // 2-2. 過去ログサーバ群 (natto, mamono 等)
+            let kako_servers = ["natto", "mamono"];
+            for kako_server in &kako_servers {
+                if *kako_server == server {
+                    continue;
+                }
+                for domain in &domains {
+                    let url = format!("https://{kako_server}.{domain}/{board}/oyster/{sub}/{key}.dat");
+                    if let Ok(content) = self.fetch_and_parse_dat(&url, true).await {
+                        return Ok(content);
                     }
                 }
             }
@@ -215,6 +230,29 @@ impl FiveChannelClient {
         Err(CharisError::Parse(format!(
             "Failed to fetch dat for {server}/{board}/{key}"
         )))
+    }
+
+    async fn fetch_and_parse_dat(&self, url: &str, is_archived: bool) -> Result<ThreadContent> {
+        let res = self
+            .http_client
+            .get(url)
+            .header(USER_AGENT, &self.user_agent)
+            .send()
+            .await;
+
+        if let Ok(response) = res {
+            if response.status().is_success() {
+                if let Ok(bytes) = response.bytes().await {
+                    let text = decode_cp932(&bytes);
+                    let mut content = parse_dat(&text);
+                    if !content.posts.is_empty() {
+                        content.is_archived = is_archived;
+                        return Ok(content);
+                    }
+                }
+            }
+        }
+        Err(CharisError::Parse(format!("Failed to fetch: {url}")))
     }
 
     /// レス書き込み POST リクエスト

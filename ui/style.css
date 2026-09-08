@@ -165,6 +165,46 @@ body {
 }
 .clear-history-btn:hover { opacity: 1; }
 
+.tree-item-tag {
+  font-size: 0.72em;
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-left: auto;
+  flex-shrink: 0;
+  font-weight: 500;
+}
+.tree-item-tag.tag-archived {
+  background-color: rgba(239, 68, 68, 0.18);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+.tree-item-tag.tag-count {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--fg-muted);
+}
+
+.tree-item-delete {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 0.9em;
+  opacity: 0.5;
+  margin-left: 4px;
+  color: var(--fg-muted);
+  line-height: 1;
+}
+.tree-item:hover .tree-item-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tree-item-delete:hover {
+  opacity: 1;
+  color: #f87171 !important;
+}
+
 .tree-list {
   display: flex;
   flex-direction: column;
@@ -192,6 +232,21 @@ body {
 .tree-item.active {
   background-color: var(--bg-active) !important;
   color: var(--fg-active) !important;
+}
+.tree-item.draggable-item {
+  cursor: grab;
+  user-select: none;
+}
+.tree-item.dragging {
+  opacity: 0.45;
+  background-color: var(--bg-hover);
+  cursor: grabbing;
+}
+.tree-item.drag-over-top {
+  border-top: 2px solid var(--accent, #3b82f6) !important;
+}
+.tree-item.drag-over-bottom {
+  border-bottom: 2px solid var(--accent, #3b82f6) !important;
 }
 
 .tree-sub-header {
@@ -420,6 +475,26 @@ td.ikioi.very-hot { color: #f44336; font-weight: 700; }
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.thread-status-badge {
+  font-size: 0.8em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.thread-status-badge.badge-archived {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+.thread-status-badge.badge-cached {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
 }
 
 .toolbar-actions {

@@ -42,6 +42,22 @@ pub struct PostItem {
 pub struct ThreadContent {
     pub title: String,
     pub posts: Vec<PostItem>,
+    #[serde(default)]
+    pub is_archived: bool,
+    #[serde(default)]
+    pub from_cache: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CachedThreadItem {
+    pub server: String,
+    pub board: String,
+    pub key: String,
+    pub title: String,
+    pub post_count: usize,
+    pub is_archived: bool,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -58,6 +74,14 @@ pub struct HistoryThreadItem {
     pub board: BoardItem,
     pub thread: ThreadItem,
     pub visited_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatDroppedThreadItem {
+    pub board: BoardItem,
+    pub thread: ThreadItem,
+    pub archived_at: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

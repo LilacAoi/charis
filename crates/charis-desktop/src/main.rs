@@ -1,9 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use charis_core::{
-    AppSettings, BoardCategory, BoardItem, BookmarkThreadItem, FiveChannelClient,
-    HistoryThreadItem, NGSettings, PostPayload, PostResult, StorageManager, ThreadContent,
-    ThreadItem,
+    AppSettings, BoardCategory, BoardItem, BookmarkThreadItem, CachedThreadItem,
+    DatDroppedThreadItem, FiveChannelClient, HistoryThreadItem, NGSettings, PostPayload,
+    PostResult, StorageManager, ThreadContent, ThreadItem,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -56,22 +56,65 @@ async fn get_thread_posts(
     key: String,
 ) -> Result<ThreadContent, String> {
     println!("[charis-backend] get_thread_posts called for {server}/{board}/{key}");
-    let res = state
-        .client
-        .get_thread_posts(&server, &board, &key)
-        .await
-        .map_err(|e| {
-            eprintln!("[charis-backend] get_thread_posts error: {e}");
-            e.to_string()
-        });
-    if let Ok(ref content) = res {
-        println!(
-            "[charis-backend] get_thread_posts success: \"{}\" with {} posts",
-            content.title,
-            content.posts.len()
-        );
+
+    // 1. リモートからの取得試行 (稼働中DAT -> oyster自動フォールバック)
+    match state.client.get_thread_posts(&server, &board, &key).await {
+        Ok(content) => {
+            println!(
+                "[charis-backend] get_thread_posts remote success: \"{}\" with {} posts (is_archived: {})",
+                content.title,
+                content.posts.len(),
+                content.is_archived
+            );
+            // 取得成功したらローカルキャッシュに保存
+            if let Err(e) = state.storage.save_thread_cache(&server, &board, &key, &content) {
+                eprintln!("[charis-backend] failed to save thread cache: {e}");
+            }
+            Ok(content)
+        }
+        Err(remote_err) => {
+            // 2. リモート失敗時、ローカルキャッシュからの復元を試行
+            if let Some(mut cached) = state.storage.get_thread_cache(&server, &board, &key) {
+                println!(
+                    "[charis-backend] get_thread_posts loaded from cache: \"{}\" with {} posts (is_archived: {})",
+                    cached.title,
+                    cached.posts.len(),
+                    cached.is_archived
+                );
+                cached.from_cache = true;
+                Ok(cached)
+            } else {
+                eprintln!("[charis-backend] get_thread_posts remote error and no cache: {remote_err}");
+                Err(remote_err.to_string())
+            }
+        }
     }
-    res
+}
+
+#[tauri::command]
+fn get_cached_threads(state: State<'_, Arc<AppState>>) -> Vec<CachedThreadItem> {
+    state.storage.get_cached_threads()
+}
+
+#[tauri::command]
+fn delete_thread_cache(
+    state: State<'_, Arc<AppState>>,
+    server: String,
+    board: String,
+    key: String,
+) -> Result<(), String> {
+    state
+        .storage
+        .delete_thread_cache(&server, &board, &key)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn clear_thread_cache(state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    state
+        .storage
+        .clear_thread_cache()
+        .map_err(|e| e.to_string())
 }
 
 
@@ -94,6 +137,17 @@ fn remove_favorite(
     state
         .storage
         .remove_favorite(&server, &board)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn save_favorites(
+    state: State<'_, Arc<AppState>>,
+    list: Vec<BoardItem>,
+) -> Result<(), String> {
+    state
+        .storage
+        .save_favorites(&list)
         .map_err(|e| e.to_string())
 }
 
@@ -124,6 +178,47 @@ fn remove_bookmark(
     state
         .storage
         .remove_bookmark(&server, &board, &thread_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn save_bookmarks(
+    state: State<'_, Arc<AppState>>,
+    list: Vec<BookmarkThreadItem>,
+) -> Result<(), String> {
+    state
+        .storage
+        .save_bookmarks(&list)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_dat_dropped_threads(state: State<'_, Arc<AppState>>) -> Vec<DatDroppedThreadItem> {
+    state.storage.get_dat_dropped_threads()
+}
+
+#[tauri::command]
+fn add_dat_dropped_thread(
+    state: State<'_, Arc<AppState>>,
+    board: BoardItem,
+    thread: ThreadItem,
+) -> Result<(), String> {
+    state
+        .storage
+        .add_dat_dropped_thread(board, thread)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn remove_dat_dropped_thread(
+    state: State<'_, Arc<AppState>>,
+    server: String,
+    board: String,
+    thread_id: String,
+) -> Result<(), String> {
+    state
+        .storage
+        .remove_dat_dropped_thread(&server, &board, &thread_id)
         .map_err(|e| e.to_string())
 }
 
@@ -268,12 +363,20 @@ fn main() {
             get_bbsmenu,
             get_thread_list,
             get_thread_posts,
+            get_cached_threads,
+            delete_thread_cache,
+            clear_thread_cache,
             get_favorites,
             add_favorite,
             remove_favorite,
+            save_favorites,
             get_bookmarks,
             add_bookmark,
             remove_bookmark,
+            save_bookmarks,
+            get_dat_dropped_threads,
+            add_dat_dropped_thread,
+            remove_dat_dropped_thread,
             get_history,
             add_history,
             clear_history,

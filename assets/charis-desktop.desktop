@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Charis
+GenericName=5ch Dedicated Browser
+Comment=5ch専ブラ
+# システムインストール時は PATH の通ったコマンド名、ローカル実行時は絶対パスを指定してください
+Exec=charis-desktop
+Icon=charis
+Terminal=false
+Categories=Network;News;Utility;
+StartupWMClass=charis-desktop

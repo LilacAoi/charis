@@ -34,6 +34,8 @@
   let saveSettingsTimeout = null;
   let readPositions = {};
   let saveReadPosTimeout = null;
+  let isRestoringScroll = false;
+  let currentThreadLoadSeq = 0;
   let pendingConfirmParams = null;
   let isPosting = false;
 
@@ -41,6 +43,8 @@
   let favorites = [];
   let bookmarks = [];
   let history = [];
+  let cachedThreads = [];
+  let datDroppedThreads = [];
   let ngSettings = { ngWords: [], ngIds: [], ngMode: 'abone', chainAbone: true };
 
   let currentBoard = null;
@@ -63,10 +67,12 @@
   const favoritesList = document.getElementById('favoritesList');
   const bookmarksList = document.getElementById('bookmarksList');
   const historyList = document.getElementById('historyList');
+  const datDroppedList = document.getElementById('datDroppedList');
   const allBoardsList = document.getElementById('allBoardsList');
   const favCountBadge = document.getElementById('favCountBadge');
   const bmCountBadge = document.getElementById('bmCountBadge');
   const historyCountBadge = document.getElementById('historyCountBadge');
+  const datDroppedCountBadge = document.getElementById('datDroppedCountBadge');
   const allBoardsCountBadge = document.getElementById('allBoardsCountBadge');
 
   const currentBoardName = document.getElementById('currentBoardName');
@@ -79,6 +85,8 @@
   const threadTitle = document.getElementById('threadTitle');
   const threadBoardLabel = document.getElementById('threadBoardLabel');
   const threadResCountLabel = document.getElementById('threadResCountLabel');
+  const threadArchivedBadge = document.getElementById('threadArchivedBadge');
+  const threadCachedBadge = document.getElementById('threadCachedBadge');
   const autoReloadIndicator = document.getElementById('autoReloadIndicator');
   const btnRefreshContent = document.getElementById('btnRefreshContent');
   const selectAutoReload = document.getElementById('selectAutoReload');
@@ -234,10 +242,12 @@
     try {
       let loadedSettings = null;
       let loadedReadPositions = {};
-      [favorites, bookmarks, history, ngSettings, loadedSettings, loadedReadPositions] = await Promise.all([
+      [favorites, bookmarks, history, cachedThreads, datDroppedThreads, ngSettings, loadedSettings, loadedReadPositions] = await Promise.all([
         invokeTauri('get_favorites').catch(e => { console.warn("get_favorites failed:", e); return []; }),
         invokeTauri('get_bookmarks').catch(e => { console.warn("get_bookmarks failed:", e); return []; }),
         invokeTauri('get_history').catch(e => { console.warn("get_history failed:", e); return []; }),
+        invokeTauri('get_cached_threads').catch(e => { console.warn("get_cached_threads failed:", e); return []; }),
+        invokeTauri('get_dat_dropped_threads').catch(e => { console.warn("get_dat_dropped_threads failed:", e); return []; }),
         invokeTauri('get_ng_settings').catch(e => { console.warn("get_ng_settings failed:", e); return { ngWords: [], ngIds: [], ngMode: 'abone', chainAbone: true }; }),
         invokeTauri('get_app_settings').catch(e => { console.warn("get_app_settings failed:", e); return null; }),
         invokeTauri('get_read_positions').catch(e => { console.warn("get_read_positions failed:", e); return {}; }),
@@ -258,6 +268,7 @@
       renderFavorites();
       renderBookmarks();
       renderHistory();
+      renderDatDropped();
       renderNGChips();
     } catch (e) {
       console.error("Storage loading error:", e);
@@ -328,6 +339,80 @@
     });
   }
 
+  let isTreeItemDragging = false;
+
+  function reorderArray(list, fromIndex, targetIndex, insertAfter) {
+    if (fromIndex === targetIndex) return list;
+    const result = [...list];
+    const [removed] = result.splice(fromIndex, 1);
+    let newTargetIndex = targetIndex;
+    if (fromIndex < targetIndex) {
+      newTargetIndex -= 1;
+    }
+    let finalIndex = insertAfter ? newTargetIndex + 1 : newTargetIndex;
+    if (finalIndex < 0) finalIndex = 0;
+    if (finalIndex > result.length) finalIndex = result.length;
+    result.splice(finalIndex, 0, removed);
+    return result;
+  }
+
+  function setupTreeListDraggable(container, type, getList, onReorder) {
+    const items = container.querySelectorAll('.tree-item');
+    items.forEach((item, index) => {
+      item.classList.add('draggable-item');
+      item.setAttribute('draggable', 'true');
+
+      item.addEventListener('dragstart', (e) => {
+        isTreeItemDragging = true;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', `${type}:${index}`);
+        item.classList.add('dragging');
+      });
+
+      item.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const rect = item.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        if (e.clientY < midY) {
+          item.classList.add('drag-over-top');
+          item.classList.remove('drag-over-bottom');
+        } else {
+          item.classList.add('drag-over-bottom');
+          item.classList.remove('drag-over-top');
+        }
+      });
+
+      item.addEventListener('dragleave', () => {
+        item.classList.remove('drag-over-top', 'drag-over-bottom');
+      });
+
+      item.addEventListener('drop', (e) => {
+        e.preventDefault();
+        item.classList.remove('drag-over-top', 'drag-over-bottom');
+        const data = e.dataTransfer.getData('text/plain');
+        if (!data || !data.startsWith(`${type}:`)) return;
+        const fromIndex = parseInt(data.split(':')[1], 10);
+        if (isNaN(fromIndex)) return;
+
+        const rect = item.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        const insertAfter = e.clientY >= midY;
+
+        const currentList = getList();
+        const newList = reorderArray(currentList, fromIndex, index, insertAfter);
+        onReorder(newList);
+      });
+
+      item.addEventListener('dragend', () => {
+        item.classList.remove('dragging', 'drag-over-top', 'drag-over-bottom');
+        setTimeout(() => {
+          isTreeItemDragging = false;
+        }, 100);
+      });
+    });
+  }
+
   function renderFavorites() {
     favCountBadge.textContent = favorites.length;
     if (favorites.length === 0) {
@@ -342,6 +427,7 @@
 
     favoritesList.querySelectorAll('.tree-item').forEach(item => {
       item.onclick = () => {
+        if (isTreeItemDragging) return;
         const board = {
           name: item.getAttribute('data-name'),
           server: item.getAttribute('data-server'),
@@ -351,6 +437,16 @@
         selectBoard(board);
       };
     });
+
+    setupTreeListDraggable(favoritesList, 'favorite', () => favorites, async (newList) => {
+      favorites = newList;
+      renderFavorites();
+      try {
+        await invokeTauri('save_favorites', { list: favorites });
+      } catch (err) {
+        console.error('save_favorites failed:', err);
+      }
+    });
   }
 
   function renderBookmarks() {
@@ -359,23 +455,115 @@
       bookmarksList.innerHTML = '<div class="loading-item">(ブックマークは空です)</div>';
       return;
     }
-    bookmarksList.innerHTML = bookmarks.map(bm => `
-      <div class="tree-item" data-server="${escapeHtml(bm.board.server)}" data-board="${escapeHtml(bm.board.board)}" data-id="${escapeHtml(bm.thread.id)}" title="${escapeHtml(bm.thread.title)}">
-        <span>📌</span> <span style="overflow:hidden; text-overflow:ellipsis;">${formatSafeText(bm.thread.title)}</span>
-      </div>
-    `).join('');
+    bookmarksList.innerHTML = bookmarks.map(bm => {
+      const isDatDropped = datDroppedThreads.some(d => d.board.server === bm.board.server && d.board.board === bm.board.board && d.thread.id === bm.thread.id);
+      const cached = cachedThreads.find(c => c.server === bm.board.server && c.board === bm.board.board && c.key === bm.thread.id);
+      const isArchived = isDatDropped || (cached ? cached.isArchived : false);
+      const tagHtml = isArchived ? '<span class="tree-item-tag tag-archived">過去</span>' : '';
+      return `
+        <div class="tree-item" data-server="${escapeHtml(bm.board.server)}" data-board="${escapeHtml(bm.board.board)}" data-id="${escapeHtml(bm.thread.id)}" title="${escapeHtml(bm.thread.title)}">
+          <span>📌</span> <span style="overflow:hidden; text-overflow:ellipsis; flex: 1;">${formatSafeText(bm.thread.title)}</span>
+          ${tagHtml}
+          <button class="tree-item-delete" title="ブックマーク解除" data-del-bm="1">✕</button>
+        </div>
+      `;
+    }).join('');
 
     bookmarksList.querySelectorAll('.tree-item').forEach(item => {
-      item.onclick = async () => {
+      item.onclick = async (e) => {
+        if (isTreeItemDragging) return;
         const server = item.getAttribute('data-server');
         const boardCode = item.getAttribute('data-board');
         const threadId = item.getAttribute('data-id');
+
+        // ブックマーク個別削除
+        if (e.target.closest('[data-del-bm]')) {
+          e.stopPropagation();
+          try {
+            await invokeTauri('remove_bookmark', { server, board: boardCode, threadId });
+            bookmarks = await invokeTauri('get_bookmarks');
+            renderBookmarks();
+            updateBookmarkButtonStatus();
+          } catch (err) {
+            console.error('Failed to remove bookmark:', err);
+          }
+          return;
+        }
+
         const bm = bookmarks.find(b => b.board.server === server && b.board.board === boardCode && b.thread.id === threadId);
         if (bm) {
           if (!currentBoard || currentBoard.server !== server || currentBoard.board !== boardCode) {
             await selectBoard(bm.board, false);
           }
           selectThread(bm.thread);
+        }
+      };
+    });
+
+    setupTreeListDraggable(bookmarksList, 'bookmark', () => bookmarks, async (newList) => {
+      bookmarks = newList;
+      renderBookmarks();
+      try {
+        await invokeTauri('save_bookmarks', { list: bookmarks });
+      } catch (err) {
+        console.error('save_bookmarks failed:', err);
+      }
+    });
+  }
+
+  async function refreshDatDroppedThreads() {
+    try {
+      datDroppedThreads = await invokeTauri('get_dat_dropped_threads');
+      renderDatDropped();
+      renderBookmarks();
+    } catch (e) {
+      console.warn('Failed to get dat dropped threads:', e);
+    }
+  }
+
+  function renderDatDropped() {
+    if (!datDroppedCountBadge || !datDroppedList) return;
+    datDroppedCountBadge.textContent = datDroppedThreads.length;
+    if (datDroppedThreads.length === 0) {
+      datDroppedList.innerHTML = '<div class="loading-item">(DAT落ちスレはありません)</div>';
+      return;
+    }
+
+    datDroppedList.innerHTML = datDroppedThreads.map(d => `
+      <div class="tree-item" data-server="${escapeHtml(d.board.server)}" data-board="${escapeHtml(d.board.board)}" data-id="${escapeHtml(d.thread.id)}" title="${escapeHtml(d.thread.title)} (${escapeHtml(d.board.name || d.board.board)})">
+        <span>📦</span>
+        <span style="overflow:hidden; text-overflow:ellipsis; flex: 1;">${formatSafeText(d.thread.title)}</span>
+        <span class="tree-item-tag tag-count">${d.thread.resCount}</span>
+        <button class="tree-item-delete" title="DAT落ちリストから削除" data-del-dat="1">✕</button>
+      </div>
+    `).join('');
+
+    datDroppedList.querySelectorAll('.tree-item').forEach(item => {
+      item.onclick = async (e) => {
+        const server = item.getAttribute('data-server');
+        const boardCode = item.getAttribute('data-board');
+        const threadId = item.getAttribute('data-id');
+
+        // DAT落ちスレ個別削除
+        if (e.target.closest('[data-del-dat]')) {
+          e.stopPropagation();
+          try {
+            await invokeTauri('remove_dat_dropped_thread', { server, board: boardCode, threadId });
+            datDroppedThreads = await invokeTauri('get_dat_dropped_threads');
+            renderDatDropped();
+            renderBookmarks();
+          } catch (err) {
+            console.error('Failed to remove dat dropped thread:', err);
+          }
+          return;
+        }
+
+        const d = datDroppedThreads.find(item => item.board.server === server && item.board.board === boardCode && item.thread.id === threadId);
+        if (d) {
+          if (!currentBoard || currentBoard.server !== server || currentBoard.board !== boardCode) {
+            await selectBoard(d.board, false);
+          }
+          selectThread(d.thread);
         }
       };
     });
@@ -411,6 +599,10 @@
 
   // --- Select Board & Load Threads ---
   async function selectBoard(board, loadFirstThread = false) {
+    if (currentThread && currentBoard && (currentBoard.server !== board.server || currentBoard.board !== board.board)) {
+      flushCurrentThreadReadPosition();
+      currentThread = null;
+    }
     currentBoard = board;
     currentBoardName.textContent = board.name;
     updateFavStarStatus();
@@ -517,12 +709,25 @@
 
   // --- Select Thread & Load Posts ---
   async function selectThread(thread) {
+    // Flush reading position of the currently open thread before switching away
+    flushCurrentThreadReadPosition();
+
+    const seq = ++currentThreadLoadSeq;
+    isRestoringScroll = true;
     currentThread = thread;
     const decodedTitle = decodeHtmlEntities(thread.title);
     threadTitle.textContent = decodedTitle;
     threadTitle.title = decodedTitle;
     threadBoardLabel.textContent = `板: ${currentBoard ? currentBoard.name : '-'}`;
     threadResCountLabel.textContent = `${thread.resCount} レス`;
+    if (threadArchivedBadge) threadArchivedBadge.style.display = 'none';
+    if (threadCachedBadge) threadCachedBadge.style.display = 'none';
+    if (btnOpenPostModal) {
+      btnOpenPostModal.disabled = false;
+      btnOpenPostModal.title = 'スレッドに書き込み (w)';
+      btnOpenPostModal.style.opacity = '1';
+      btnOpenPostModal.style.cursor = 'pointer';
+    }
 
     // Highlight row in table
     threadTableBody.querySelectorAll('.thread-row').forEach(r => {
@@ -548,19 +753,66 @@
         key: thread.id,
       });
 
+      if (seq !== currentThreadLoadSeq) {
+        // Discard result if user has already switched to another thread
+        return;
+      }
+
       if (content.title) {
         const decodedContentTitle = decodeHtmlEntities(content.title);
         threadTitle.textContent = decodedContentTitle;
         threadTitle.title = decodedContentTitle;
       }
+      if (content.posts) {
+        threadResCountLabel.textContent = `${content.posts.length} レス`;
+      }
+
+      // バッジ表示と書き込みボタン制御
+      if (threadArchivedBadge) {
+        threadArchivedBadge.style.display = content.isArchived ? 'inline-flex' : 'none';
+      }
+      if (threadCachedBadge) {
+        threadCachedBadge.style.display = content.fromCache ? 'inline-flex' : 'none';
+      }
+      if (btnOpenPostModal && content.isArchived) {
+        btnOpenPostModal.disabled = true;
+        btnOpenPostModal.title = '過去ログ（DAT落ち）のため書き込めません';
+        btnOpenPostModal.style.opacity = '0.5';
+        btnOpenPostModal.style.cursor = 'not-allowed';
+      }
+
       rawPosts = content.posts;
       renderAllPosts();
+
+      // ブックマークされているスレッドがDAT落ちした場合は「DAT落ちスレ」に自動登録
+      if (content.isArchived) {
+        const isBookmarked = bookmarks.some(b => b.board.server === currentBoard.server && b.board.board === currentBoard.board && b.thread.id === thread.id);
+        const alreadyInDatDropped = datDroppedThreads.some(d => d.board.server === currentBoard.server && d.board.board === currentBoard.board && d.thread.id === thread.id);
+        if (isBookmarked && !alreadyInDatDropped) {
+          const datThreadItem = {
+            id: thread.id,
+            title: content.title || thread.title,
+            resCount: content.posts.length,
+            ikioi: thread.ikioi || 0,
+          };
+          invokeTauri('add_dat_dropped_thread', { board: currentBoard, thread: datThreadItem }).then(() => {
+            refreshDatDroppedThreads();
+          });
+        }
+      }
+      refreshDatDroppedThreads();
+
       if (currentBoard && currentThread) {
         const threadKey = `${currentBoard.server}_${currentBoard.board}_${currentThread.id}`;
         applyInitialScroll(threadKey);
+      } else {
+        isRestoringScroll = false;
       }
     } catch (e) {
-      postsList.innerHTML = `<div class="empty-content-message" style="color:#ff6b6b;">スレッドの読み込みに失敗: ${escapeHtml(e)}</div>`;
+      if (seq === currentThreadLoadSeq) {
+        postsList.innerHTML = `<div class="empty-content-message" style="color:#ff6b6b;">スレッドの読み込みに失敗: ${escapeHtml(e)}</div>`;
+        isRestoringScroll = false;
+      }
     }
   }
 
@@ -678,25 +930,65 @@
       } else if (mode === 'lastRead') {
         const lastNum = readPositions[threadKey];
         if (lastNum && lastNum > 1) {
-          const targetEl = document.getElementById(`post-${lastNum}`);
+          let targetEl = document.getElementById(`post-${lastNum}`);
+          if (!targetEl || targetEl.style.display === 'none' || targetEl.offsetParent === null) {
+            for (let n = lastNum - 1; n >= 1; n--) {
+              const el = document.getElementById(`post-${n}`);
+              if (el && el.style.display !== 'none' && el.offsetParent !== null) {
+                targetEl = el;
+                break;
+              }
+            }
+          }
           if (targetEl) {
             targetEl.scrollIntoView({ behavior: 'auto', block: 'start' });
-            return;
+            requestAnimationFrame(() => {
+              if (targetEl && targetEl.offsetParent !== null) {
+                targetEl.scrollIntoView({ behavior: 'auto', block: 'start' });
+              }
+            });
+          } else {
+            postsContainer.scrollTop = 0;
           }
+        } else {
+          postsContainer.scrollTop = 0;
         }
-        postsContainer.scrollTop = 0;
       } else {
         postsContainer.scrollTop = 0;
       }
+
+      // Allow DOM rendering / layout to settle before re-enabling scroll tracking
+      setTimeout(() => {
+        isRestoringScroll = false;
+      }, 200);
     });
+  }
+
+  function flushCurrentThreadReadPosition() {
+    if (saveReadPosTimeout) {
+      clearTimeout(saveReadPosTimeout);
+      saveReadPosTimeout = null;
+    }
+    if (isRestoringScroll) return;
+    if (!currentBoard || !currentThread) return;
+    const threadKey = `${currentBoard.server}_${currentBoard.board}_${currentThread.id}`;
+    const topNum = getTopVisiblePostNumber();
+    if (topNum > 0) {
+      readPositions[threadKey] = topNum;
+      invokeTauri('save_read_position', { key: threadKey, resNumber: topNum }).catch(e => {
+        console.warn("Failed to save read position on flush:", e);
+      });
+    }
   }
 
   function setupScrollPositionTracker() {
     postsContainer.addEventListener('scroll', () => {
+      if (isRestoringScroll) return;
       if (!currentBoard || !currentThread) return;
       const threadKey = `${currentBoard.server}_${currentBoard.board}_${currentThread.id}`;
       if (saveReadPosTimeout) clearTimeout(saveReadPosTimeout);
       saveReadPosTimeout = setTimeout(() => {
+        if (isRestoringScroll) return;
         const topNum = getTopVisiblePostNumber();
         if (topNum > 0) {
           readPositions[threadKey] = topNum;
@@ -710,6 +1002,7 @@
 
   function getTopVisiblePostNumber() {
     const posts = postsContainer.querySelectorAll('.post:not(.transparent-ng)');
+    if (!posts || posts.length === 0) return 0;
     const containerTop = postsContainer.getBoundingClientRect().top;
     for (const p of posts) {
       const rect = p.getBoundingClientRect();
@@ -1470,8 +1763,32 @@
         key: currentThread.id,
       });
 
+      if (threadArchivedBadge) {
+        threadArchivedBadge.style.display = content.isArchived ? 'inline-flex' : 'none';
+      }
+      if (threadCachedBadge) {
+        threadCachedBadge.style.display = content.fromCache ? 'inline-flex' : 'none';
+      }
+      if (content.isArchived) {
+        if (btnOpenPostModal) {
+          btnOpenPostModal.disabled = true;
+          btnOpenPostModal.title = '過去ログ（DAT落ち）のため書き込めません';
+          btnOpenPostModal.style.opacity = '0.5';
+          btnOpenPostModal.style.cursor = 'not-allowed';
+        }
+        if (selectAutoReload && selectAutoReload.value !== '0') {
+          selectAutoReload.value = '0';
+          if (typeof autoReloadTimer !== 'undefined' && autoReloadTimer) {
+            clearInterval(autoReloadTimer);
+            autoReloadTimer = null;
+          }
+          if (autoReloadIndicator) autoReloadIndicator.style.display = 'none';
+        }
+      }
+
       const newPostsCount = content.posts.length - rawPosts.length;
       if (newPostsCount > 0) {
+        threadResCountLabel.textContent = `${content.posts.length} レス`;
         const isAtBottom = postsContainer.scrollHeight - postsContainer.scrollTop - postsContainer.clientHeight < 120;
         rawPosts = content.posts;
         renderAllPosts();
@@ -1514,10 +1831,12 @@
     if (currentBoard) selectBoard(currentBoard);
   };
   document.getElementById('btnClearHistory').onclick = async () => {
-    if (confirm("閲覧履歴をすべて消去しますか？")) {
+    if (confirm("閲覧履歴とスレッドキャッシュをすべて消去しますか？")) {
       await invokeTauri('clear_history');
       history = [];
+      cachedThreads = [];
       renderHistory();
+      renderBookmarks();
     }
   };
 
@@ -2003,6 +2322,10 @@
         splitterMain.classList.remove('dragging');
         document.body.style.cursor = '';
       }
+    });
+
+    window.addEventListener('beforeunload', () => {
+      flushCurrentThreadReadPosition();
     });
   }
 

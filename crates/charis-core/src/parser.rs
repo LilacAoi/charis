@@ -245,6 +245,8 @@ pub fn parse_dat(text: &str) -> ThreadContent {
     ThreadContent {
         title: thread_title,
         posts,
+        is_archived: false,
+        from_cache: false,
     }
 }
 

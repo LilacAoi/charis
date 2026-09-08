@@ -56,6 +56,17 @@
           <div class="tree-list collapsed" id="historyList"></div>
         </div>
 
+        <!-- DAT Dropped Threads Section -->
+        <div class="tree-section">
+          <div class="tree-section-header" data-target="datDroppedList">
+            <span class="tree-toggle">▶</span>
+            <span class="tree-icon">📦</span>
+            <span class="tree-title">DAT落ちスレ</span>
+            <span class="tree-badge" id="datDroppedCountBadge">0</span>
+          </div>
+          <div class="tree-list collapsed" id="datDroppedList"></div>
+        </div>
+
         <!-- All Boards Section -->
         <div class="tree-section">
           <div class="tree-section-header" data-target="allBoardsList">
@@ -130,6 +141,8 @@
               <span id="threadBoardLabel">板: -</span>
               <span>•</span>
               <span id="threadResCountLabel">0 レス</span>
+              <span class="thread-status-badge badge-archived" id="threadArchivedBadge" style="display: none;">📦 過去ログ (DAT落ち)</span>
+              <span class="thread-status-badge badge-cached" id="threadCachedBadge" style="display: none;">💾 キャッシュ</span>
               <span id="autoReloadIndicator" style="display: none; color: #4caf50;">● 自動更新中</span>
             </div>
           </div>
