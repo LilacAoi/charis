@@ -2215,6 +2215,14 @@
           return;
         }
 
+        // Space / Shift+Space -> Full page scroll down / up
+        if ((e.key === ' ' || e.key === 'Spacebar' || e.code === 'Space') && !e.ctrlKey && !e.altKey && !e.metaKey) {
+          e.preventDefault();
+          const direction = e.shiftKey ? -1 : 1;
+          postsContainer.scrollBy({ top: direction * postsContainer.clientHeight, behavior: 'smooth' });
+          return;
+        }
+
         // j / ArrowDown -> Scroll down smoothly (small step)
         if ((e.key === 'j' && !e.shiftKey) || e.key === 'ArrowDown') {
           e.preventDefault();
