@@ -68,6 +68,60 @@ body {
 }
 
 /* 1. Left Sidebar */
+.app-container.sidebar-collapsed .sidebar {
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  border-right: none !important;
+  overflow: hidden !important;
+  visibility: hidden;
+}
+.app-container.sidebar-collapsed #splitterSidebar {
+  display: none !important;
+}
+
+.toggle-sidebar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  min-width: 26px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  margin-right: 4px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--fg-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 11px;
+  line-height: 1;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.toggle-sidebar-btn:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-color: var(--highlight-color);
+  color: #ffffff;
+}
+.app-container.sidebar-collapsed .toggle-sidebar-btn {
+  background-color: rgba(55, 148, 255, 0.2);
+  border-color: var(--highlight-color);
+  color: #ffffff;
+}
+.app-container.sidebar-collapsed .toggle-sidebar-btn:hover {
+  background-color: rgba(55, 148, 255, 0.35);
+  color: #ffffff;
+}
+
+.sidebar-toggle-icon {
+  display: inline-block;
+  font-size: 11px;
+  line-height: 1;
+  user-select: none;
+}
+
 .sidebar {
   width: 270px;
   min-width: 180px;
@@ -473,8 +527,24 @@ td.ikioi.very-hot { color: #f44336; font-weight: 700; }
   font-size: 0.85em;
   color: var(--fg-muted);
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.thread-meta > span {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.thread-meta #threadBoardLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+  flex-shrink: 1;
 }
 
 .thread-status-badge {
@@ -485,6 +555,8 @@ td.ikioi.very-hot { color: #f44336; font-weight: 700; }
   display: inline-flex;
   align-items: center;
   gap: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .thread-status-badge.badge-archived {
   background-color: rgba(239, 68, 68, 0.15);
@@ -500,7 +572,44 @@ td.ikioi.very-hot { color: #f44336; font-weight: 700; }
 .toolbar-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.toolbar-actions .btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toolbar-actions .btn-text {
+  display: inline;
+}
+
+@media (max-width: 950px) {
+  .toolbar-actions .btn-text {
+    display: none;
+  }
+  .toolbar-actions .tool-btn {
+    padding: 4px 6px;
+    gap: 0;
+  }
+  .toolbar-actions .tool-select {
+    padding: 4px 18px 4px 6px;
+    font-size: 12px;
+  }
+}
+
+.toolbar-actions.compact-actions .btn-text {
+  display: none !important;
+}
+.toolbar-actions.compact-actions .tool-btn {
+  padding: 4px 6px !important;
+  gap: 0 !important;
+}
+.toolbar-actions.compact-actions .tool-select {
+  padding: 4px 18px 4px 6px !important;
+  font-size: 12px !important;
 }
 
 .tool-btn {

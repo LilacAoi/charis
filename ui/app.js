@@ -162,11 +162,52 @@
   const btnSubmitPostText = document.getElementById('btnSubmitPostText');
   const postStatusText = document.getElementById('postStatusText');
 
-  // Splitters
+  // Splitters & Layout
+  const appContainer = document.querySelector('.app-container');
   const splitterSidebar = document.getElementById('splitterSidebar');
   const sidebar = document.getElementById('sidebar');
   const splitterMain = document.getElementById('splitterMain');
   const paneThreads = document.getElementById('paneThreads');
+  const btnToggleSidebar = document.getElementById('btnToggleSidebar');
+  const btnToggleSidebarContent = document.getElementById('btnToggleSidebarContent');
+  const btnCollapseSidebar = document.getElementById('btnCollapseSidebar');
+
+  let isSidebarCollapsed = false;
+
+  function toggleSidebar() {
+    isSidebarCollapsed = !isSidebarCollapsed;
+    if (appContainer) {
+      appContainer.classList.toggle('sidebar-collapsed', isSidebarCollapsed);
+    }
+    const titleText = isSidebarCollapsed ? '板一覧サイドバーを表示 (Ctrl+B)' : '板一覧サイドバーを折りたたむ (Ctrl+B)';
+    const iconChar = isSidebarCollapsed ? '▶' : '◀';
+
+    if (btnToggleSidebar) {
+      btnToggleSidebar.title = titleText;
+      const icon = btnToggleSidebar.querySelector('.sidebar-toggle-icon');
+      if (icon) icon.textContent = iconChar;
+    }
+    if (btnToggleSidebarContent) {
+      btnToggleSidebarContent.title = titleText;
+      const icon = btnToggleSidebarContent.querySelector('.sidebar-toggle-icon');
+      if (icon) icon.textContent = iconChar;
+    }
+    if (isSidebarCollapsed && activePane === 'sidebar') {
+      setFocusedPane('threads');
+    }
+    updateCompactActions();
+  }
+
+  function updateCompactActions() {
+    const paneContentEl = document.getElementById('paneContent');
+    const toolbarActions = document.querySelector('.toolbar-actions');
+    if (!toolbarActions) return;
+    const contentWidth = paneContentEl && paneContentEl.clientWidth > 0 ? paneContentEl.clientWidth : window.innerWidth;
+    const isNarrow = contentWidth < 720 || window.innerWidth < 950;
+    toolbarActions.classList.toggle('compact-actions', isNarrow);
+  }
+
+  window.addEventListener('resize', updateCompactActions);
 
   // Utility: Escape HTML
   function escapeHtml(str) {
@@ -234,6 +275,7 @@
     setupSplitters();
     setupKeybindings();
     setupTreeToggles();
+    updateCompactActions();
 
     // 1. 板一覧を最優先で取得開始
     loadBBSMenu();
@@ -1881,6 +1923,9 @@
   let lastKey = '';
 
   function setFocusedPane(pane) {
+    if (pane === 'sidebar' && isSidebarCollapsed) {
+      pane = 'threads';
+    }
     activePane = pane;
     sidebar.classList.toggle('focused', pane === 'sidebar');
     paneThreads.classList.toggle('focused', pane === 'threads');
@@ -1916,6 +1961,11 @@
   }
 
   function setupKeybindings() {
+    // Sidebar toggle buttons
+    if (btnToggleSidebar) btnToggleSidebar.addEventListener('click', toggleSidebar);
+    if (btnToggleSidebarContent) btnToggleSidebarContent.addEventListener('click', toggleSidebar);
+    if (btnCollapseSidebar) btnCollapseSidebar.addEventListener('click', toggleSidebar);
+
     // Click on pane to set focus
     sidebar.addEventListener('mousedown', () => setFocusedPane('sidebar'));
     paneThreads.addEventListener('mousedown', () => setFocusedPane('threads'));
@@ -1944,6 +1994,13 @@
         if (e.key === 'Escape') {
           e.target.blur();
         }
+        return;
+      }
+
+      // Toggle sidebar (Ctrl+B)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        toggleSidebar();
         return;
       }
 

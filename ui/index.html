@@ -15,9 +15,10 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <span class="app-title">charis</span>
-        <div style="display: flex; gap: 4px;">
+        <div style="display: flex; gap: 4px; align-items: center;">
           <button class="icon-btn" id="btnRefreshBbs" title="板一覧を再取得 (r)">🔄</button>
           <button class="icon-btn" id="btnOpenSettingsModal" title="設定 (Settings)">⚙️</button>
+          <button class="icon-btn" id="btnCollapseSidebar" title="サイドバーを折りたたむ (Ctrl+B)">◀</button>
         </div>
       </div>
 
@@ -90,6 +91,9 @@
       <!-- Top Pane: Thread List -->
       <section class="pane-threads" id="paneThreads">
         <div class="toolbar">
+          <button class="tool-btn toggle-sidebar-btn" id="btnToggleSidebar" title="サイドバーの表示切替 (Ctrl+B)">
+            <span class="sidebar-toggle-icon">◀</span>
+          </button>
           <span class="board-info">
             <span class="fav-star" id="btnToggleFavBoard" title="お気に入りを切り替え">☆</span>
             <span class="current-board-name" id="currentBoardName">板を選択してください</span>
@@ -135,6 +139,9 @@
       <!-- Bottom Pane: Thread Content -->
       <section class="pane-content" id="paneContent">
         <div class="thread-toolbar">
+          <button class="tool-btn toggle-sidebar-btn" id="btnToggleSidebarContent" title="サイドバーの表示切替 (Ctrl+B)">
+            <span class="sidebar-toggle-icon">◀</span>
+          </button>
           <div class="thread-main-info">
             <div class="thread-title" id="threadTitle" title="スレッド未選択">スレッド未選択</div>
             <div class="thread-meta">
@@ -148,10 +155,10 @@
           </div>
           <div class="toolbar-actions">
             <button class="tool-btn highlight-btn" id="btnOpenPostModal" title="スレッドに書き込み (w)">
-              <span>✍️</span> <span>書き込み</span>
+              <span class="btn-icon">✍️</span> <span class="btn-text">書き込み</span>
             </button>
             <button class="tool-btn" id="btnRefreshContent" title="新着レスを確認 (r)">
-              <span>🔄</span> <span>更新</span>
+              <span class="btn-icon">🔄</span> <span class="btn-text">更新</span>
             </button>
             <select class="tool-select" id="selectAutoReload" title="自動更新間隔">
               <option value="0">自動更新: オフ</option>
@@ -161,13 +168,13 @@
               <option value="60">自動更新: 1分</option>
             </select>
             <button class="tool-btn" id="btnBookmarkThread" title="スレッドをブックマーク">
-              <span id="bmStarIcon">☆</span> <span id="bmLabel">保存</span>
+              <span id="bmStarIcon" class="btn-icon">☆</span> <span id="bmLabel" class="btn-text">保存</span>
             </button>
             <button class="tool-btn" id="btnOpenNGModal" title="NG設定（ID・ワード）">
-              <span>🚫</span> <span>NG設定</span>
+              <span class="btn-icon">🚫</span> <span class="btn-text">NG設定</span>
             </button>
             <button class="tool-btn" id="btnOpenSettingsModalToolbar" title="設定（フォント・操作）">
-              <span>⚙️</span> <span>設定</span>
+              <span class="btn-icon">⚙️</span> <span class="btn-text">設定</span>
             </button>
           </div>
         </div>
