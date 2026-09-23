@@ -180,7 +180,7 @@ fn default_theme() -> String {
 }
 
 fn default_initial_scroll_position() -> String {
-    "top".into()
+    "lastRead".into()
 }
 
 fn default_name() -> String {

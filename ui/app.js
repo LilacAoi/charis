@@ -26,7 +26,7 @@
     defaultBlurImages: true,
     scrollAmount: 120,
     theme: "dark",
-    initialScrollPosition: "top",
+    initialScrollPosition: "lastRead",
     defaultName: "",
     defaultMail: "sage"
   };
@@ -965,7 +965,7 @@
   }
 
   function applyInitialScroll(threadKey) {
-    const mode = appSettings.initialScrollPosition || 'top';
+    const mode = appSettings.initialScrollPosition || 'lastRead';
     requestAnimationFrame(() => {
       if (mode === 'bottom') {
         postsContainer.scrollTop = postsContainer.scrollHeight;
@@ -1485,7 +1485,7 @@
 
     // General
     checkDefaultBlurImages.checked = appSettings.defaultBlurImages;
-    if (selectInitialScroll) selectInitialScroll.value = appSettings.initialScrollPosition || 'top';
+    if (selectInitialScroll) selectInitialScroll.value = appSettings.initialScrollPosition || 'lastRead';
     rangeScrollAmount.value = appSettings.scrollAmount;
     valScrollAmount.textContent = `${appSettings.scrollAmount}px`;
     if (inputDefaultName) inputDefaultName.value = appSettings.defaultName || '';

@@ -477,6 +477,7 @@ mod tests {
         let default_settings = storage.get_app_settings();
         assert_eq!(default_settings.ui_font_size, 13);
         assert_eq!(default_settings.post_font_size, 14);
+        assert_eq!(default_settings.initial_scroll_position, "lastRead");
 
         let mut updated = default_settings.clone();
         updated.ui_font_size = 16;
